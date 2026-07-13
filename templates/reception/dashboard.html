@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Reception Dashboard — LabFlow{% endblock %}
+{% block page_title %}Reception Dashboard{% endblock %}
+{% block breadcrumb %}Reception / Home{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'reception_register' %}" class="btn btn-primary">➕ Register Patient</a>
+{% endblock %}
+
+{% block content %}
+<!-- Summary Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.total_today }}</div>
+            <div class="stat-label">Total Visits Today</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon orange">⏳</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.payment_pending_today }}</div>
+            <div class="stat-label">Pending Payment</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon teal">🆕</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.registered_today }}</div>
+            <div class="stat-label">Newly Registered</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.completed_today }}</div>
+            <div class="stat-label">Reports Ready Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Visits List Queue -->
+<div class="card">
+    <div class="card-header">
+        <h3>Recent Visits Queue</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Visit ID</th>
+                    <th>Patient Name</th>
+                    <th>Age/Gender</th>
+                    <th>Phone</th>
+                    <th>Referred By</th>
+                    <th>Status</th>
+                    <th>Registered At</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for visit in visits %}
+                <tr class="clickable-row" onclick="window.location='{% url 'visit_detail' visit.id %}'">
+                    <td><strong>{{ visit.visit_id }}</strong></td>
+                    <td>{{ visit.patient_name }}</td>
+                    <td>{{ visit.age }} / {{ visit.get_gender_display }}</td>
+                    <td>{{ visit.phone }}</td>
+                    <td>{{ visit.referred_by|default:"—" }}</td>
+                    <td>
+                        <span class="badge badge-{{ visit.status }}">{{ visit.get_status_display }}</span>
+                    </td>
+                    <td>{{ visit.created_at|date:"d M, H:i" }}</td>
+                    <td class="no-print">
+                        <div class="btn-group">
+                            <a href="{% url 'visit_detail' visit.id %}" class="btn btn-outline btn-sm">👁️ View</a>
+                            <a href="{% url 'print_bill' visit.id %}" target="_blank" class="btn btn-outline btn-sm">🖨️ Print Bill</a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="table-empty">
+                        No visits recorded yet. Get started by registering a patient!
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

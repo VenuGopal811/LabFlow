@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Register Patient — LabFlow{% endblock %}
+{% block page_title %}Register Patient{% endblock %}
+{% block breadcrumb %}Reception / Register{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>New Patient Visit Registration</h3>
+    </div>
+    <form method="post" action="{% url 'reception_register' %}">
+        {% csrf_token %}
+        <div class="card-body">
+            <!-- Patient Personal Details -->
+            <h4 class="mb-2" style="font-size:14px; font-weight:600; color:var(--primary-700); text-transform:uppercase;">Patient Details</h4>
+            
+            <div class="form-row mb-2">
+                <div class="form-group">
+                    <label for="id_patient_name">Patient Name *</label>
+                    {{ form.patient_name }}
+                    {% if form.patient_name.errors %}
+                        <div class="form-error">{{ form.patient_name.errors }}</div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label for="id_age">Age *</label>
+                    {{ form.age }}
+                    {% if form.age.errors %}
+                        <div class="form-error">{{ form.age.errors }}</div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label for="id_gender">Gender *</label>
+                    {{ form.gender }}
+                    {% if form.gender.errors %}
+                        <div class="form-error">{{ form.gender.errors }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="form-row mb-2">
+                <div class="form-group">
+                    <label for="id_phone">Mobile Number *</label>
+                    {{ form.phone }}
+                    {% if form.phone.errors %}
+                        <div class="form-error">{{ form.phone.errors }}</div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label for="id_referred_by">Referred By</label>
+                    {{ form.referred_by }}
+                    {% if form.referred_by.errors %}
+                        <div class="form-error">{{ form.referred_by.errors }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="form-group mb-3">
+                <label for="id_address">Address</label>
+                {{ form.address }}
+                {% if form.address.errors %}
+                    <div class="form-error">{{ form.address.errors }}</div>
+                {% endif %}
+            </div>
+
+            <hr class="mb-3" style="border:0; border-top:1px solid var(--gray-300);">
+
+            <!-- Test Selection Grid -->
+            <h4 class="mb-2" style="font-size:14px; font-weight:600; color:var(--primary-700); text-transform:uppercase;">Select Diagnostic Tests *</h4>
+            {% if form.tests.errors %}
+                <div class="alert alert-danger">{{ form.tests.errors }}</div>
+            {% endif %}
+            
+            <div class="checkbox-grid mb-3">
+                {% for checkbox in form.tests %}
+                    <label class="checkbox-item">
+                        {{ checkbox.tag }}
+                        <span class="test-name">{{ checkbox.choice_label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+
+            <hr class="mb-3" style="border:0; border-top:1px solid var(--gray-300);">
+
+            <div class="form-group">
+                <label for="id_notes">Internal Remarks</label>
+                {{ form.notes }}
+                {% if form.notes.errors %}
+                    <div class="form-error">{{ form.notes.errors }}</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card-footer flex-between">
+            <a href="{% url 'reception_dashboard' %}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary">💾 Complete Registration</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

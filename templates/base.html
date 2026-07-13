@@ -1,0 +1,105 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LabFlow{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <h1>LabFlow</h1>
+                <div class="brand-sub">Management System</div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <!-- Reception Role Navigation -->
+                {% if request.user.is_superuser or 'reception' in user_groups %}
+                <div class="nav-section-title">Reception</div>
+                <a href="{% url 'reception_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'reception_dashboard' or request.resolver_match.url_name == 'visit_detail' %}active{% endif %}">
+                    <span class="nav-icon">📋</span>
+                    <span>Visits Queue</span>
+                </a>
+                <a href="{% url 'reception_register' %}" class="nav-link {% if request.resolver_match.url_name == 'reception_register' %}active{% endif %}">
+                    <span class="nav-icon">➕</span>
+                    <span>Register Patient</span>
+                </a>
+                {% endif %}
+                
+                <!-- Chamber Role Navigation -->
+                {% if request.user.is_superuser or 'chamber' in user_groups %}
+                <div class="nav-section-title">Chamber</div>
+                <a href="{% url 'chamber_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'chamber_dashboard' or request.resolver_match.url_name == 'chamber_review' %}active{% endif %}">
+                    <span class="nav-icon">🩺</span>
+                    <span>Approvals & Review</span>
+                </a>
+                {% endif %}
+                
+                <!-- Collection Role Navigation -->
+                {% if request.user.is_superuser or 'collection' in user_groups %}
+                <div class="nav-section-title">Collection</div>
+                <a href="{% url 'collection_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'collection_dashboard' or request.resolver_match.url_name == 'collection_collect' %}active{% endif %}">
+                    <span class="nav-icon">🧪</span>
+                    <span>Sample Collection</span>
+                </a>
+                {% endif %}
+                
+                <!-- Lab Tech Role Navigation -->
+                {% if request.user.is_superuser or 'lab' in user_groups %}
+                <div class="nav-section-title">Lab Tech</div>
+                <a href="{% url 'lab_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'lab_dashboard' or request.resolver_match.url_name == 'lab_enter_results' %}active{% endif %}">
+                    <span class="nav-icon">🔬</span>
+                    <span>Test Queue</span>
+                </a>
+                {% endif %}
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-name">{{ request.user.get_full_name|default:request.user.username }}</div>
+                <div class="user-role">
+                    {% if request.user.is_superuser %}
+                        Administrator
+                    {% else %}
+                        {{ user_groups|join:", "|title }}
+                    {% endif %}
+                </div>
+                <a href="{% url 'logout' %}">🚪 Logout</a>
+            </div>
+        </aside>
+
+        <!-- Main Layout Area -->
+        <main class="main-content">
+            <!-- Top Header -->
+            <header class="page-header">
+                <div>
+                    <h2>{% block page_title %}Dashboard{% endblock %}</h2>
+                    <div class="breadcrumb">{% block breadcrumb %}LabFlow{% endblock %}</div>
+                </div>
+                <div class="page-header-actions">
+                    {% block header_actions %}{% endblock %}
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="content">
+                <!-- Django Messages/Alerts -->
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+                
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

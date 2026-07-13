@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Collect Samples — {{ visit.visit_id }}{% endblock %}
+{% block page_title %}Collect Samples: {{ visit.visit_id }}{% endblock %}
+{% block breadcrumb %}Collection / Record Samples{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 700px; margin: 0 auto;">
+    <div class="card-header">
+        <h3>Record Container Numbers</h3>
+    </div>
+    
+    <form method="post" action="{% url 'collection_collect' visit.id %}">
+        {% csrf_token %}
+        <div class="card-body">
+            <!-- Patient Info Banner -->
+            <div style="background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div><strong>Patient:</strong> {{ visit.patient_name }}</div>
+                <div><strong>Age/Gender:</strong> {{ visit.age }} Yrs / {{ visit.get_gender_display }}</div>
+                <div><strong>Visit ID:</strong> {{ visit.visit_id }}</div>
+                <div><strong>Phone:</strong> {{ visit.phone }}</div>
+            </div>
+
+            <p class="text-muted mb-2">Please enter the container number marked on each physical sample container drawn:</p>
+
+            {% for sample_type in required_samples %}
+            <div style="border: 1px solid var(--gray-300); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 16px; background: white;">
+                <div class="flex-between mb-2">
+                    <span style="font-weight: 700; text-transform: uppercase; color: var(--primary-700); font-size: 13px;">
+                        🧪 {{ sample_type }} Sample
+                    </span>
+                    <span class="badge badge-sent_to_collection">Awaiting Draw</span>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="container_{{ sample_type }}">Container Number / Barcode *</label>
+                        <input type="text" name="container_{{ sample_type }}" id="container_{{ sample_type }}" class="form-control" placeholder="E.g., C-{{ visit.visit_id }}-{{ sample_type }}" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="notes_{{ sample_type }}">Collection Notes / Condition</label>
+                        <input type="text" name="notes_{{ sample_type }}" id="notes_{{ sample_type }}" class="form-control" placeholder="E.g., Hemolyzed, Fasting, Lipemic">
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <div style="background: var(--warning-bg); border-left: 3px solid var(--warning); padding: 10px; border-radius: var(--radius-sm); font-size: 12px; color: var(--warning); display: flex; align-items: center; gap: 8px;">
+                <span>⚠️</span>
+                <span>Confirming these records will notify the laboratory testing queue. Ensure containers match!</span>
+            </div>
+        </div>
+        
+        <div class="card-footer flex-between">
+            <a href="{% url 'collection_dashboard' %}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary">💾 Confirm Sample Draw</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

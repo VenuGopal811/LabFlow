@@ -1,0 +1,84 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bill Receipt — {{ visit.visit_id }}</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <style>
+        body { background: white; padding: 20px; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .bill-header { border-bottom: 2px dashed #000; padding-bottom: 12px; margin-bottom: 16px; text-align: center; }
+        .bill-header h1 { font-size: 24px; margin-bottom: 4px; }
+        .info-grid { display: grid; grid-template-columns: 100px 1fr 100px 1fr; gap: 8px; font-size: 13px; margin-bottom: 20px; }
+        .info-label { color: #666; font-weight: 600; }
+        table.bill-table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
+        table.bill-table th { border-bottom: 1px solid #000; border-top: 1px solid #000; padding: 8px; text-align: left; font-size: 13px; }
+        table.bill-table td { padding: 8px; font-size: 13px; border-bottom: 1px dashed #eee; }
+        .total-box { border-top: 2px solid #000; padding-top: 10px; text-align: right; font-size: 16px; font-weight: 700; }
+        .print-btn-bar { display: flex; justify-content: center; margin-bottom: 20px; }
+        @media print {
+            .print-btn-bar { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-btn-bar">
+        <button onclick="window.print()" class="btn btn-primary">🖨️ Click to Print Bill</button>
+    </div>
+
+    <div class="bill-container">
+        <div class="bill-header">
+            <h1>LabFlow Diagnostics</h1>
+            <p>24x7 Lab Services & Report Center</p>
+            <p>Phone: +91 98765 43210 | Email: billing@labflow.com</p>
+        </div>
+
+        <div class="info-grid">
+            <span class="info-label">Visit ID:</span>
+            <span><strong>{{ visit.visit_id }}</strong></span>
+            <span class="info-label">Date/Time:</span>
+            <span>{{ visit.created_at|date:"d M Y, H:i" }}</span>
+
+            <span class="info-label">Patient:</span>
+            <span><strong>{{ visit.patient_name }}</strong></span>
+            <span class="info-label">Age/Gender:</span>
+            <span>{{ visit.age }} Yrs / {{ visit.get_gender_display }}</span>
+
+            <span class="info-label">Phone:</span>
+            <span>{{ visit.phone }}</span>
+            <span class="info-label">Referred By:</span>
+            <span>{{ visit.referred_by|default:"Self Referred" }}</span>
+        </div>
+
+        <table class="bill-table">
+            <thead>
+                <tr>
+                    <th>S.No.</th>
+                    <th>Test / Package Name</th>
+                    <th>Dept.</th>
+                    <th style="text-align: right;">Amount (INR)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in test_orders %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td><strong>{{ order.test.name }}</strong> {% if order.test.short_code %}({{ order.test.short_code }}){% endif %}</td>
+                    <td>{{ order.test.department }}</td>
+                    <td style="text-align: right;">₹{{ order.test.price }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total-box">
+            Total Price: ₹{{ total }}
+        </div>
+
+        <div style="margin-top: 50px; text-align: center; font-size: 11px; color: #888;">
+            <p>Thank you for choosing LabFlow Diagnostics.</p>
+            <p>This is a computer generated invoice and does not require a physical signature.</p>
+        </div>
+    </div>
+</body>
+</html>

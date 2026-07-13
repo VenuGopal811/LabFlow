@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Lab testing Queue — LabFlow{% endblock %}
+{% block page_title %}Lab Testing Queue{% endblock %}
+{% block breadcrumb %}Lab Tech / Home{% endblock %}
+
+{% block content %}
+<!-- stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon orange">🔬</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.pending }}</div>
+            <div class="stat-label">Pending Lab Tests</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.entered_today }}</div>
+            <div class="stat-label">Results Entered Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Testing Queue Table -->
+<div class="card">
+    <div class="card-header">
+        <h3>Samples Awaiting Laboratory Analysis</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Visit ID</th>
+                    <th>Patient Name</th>
+                    <th>Test / Panel Name</th>
+                    <th>Sample Type</th>
+                    <th>Container Code</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in queue %}
+                <tr>
+                    <td><strong>{{ order.visit.visit_id }}</strong></td>
+                    <td>{{ order.visit.patient_name }}</td>
+                    <td><strong>{{ order.test.name }}</strong> {% if order.test.short_code %}({{ order.test.short_code }}){% endif %}</td>
+                    <td><span style="text-transform: capitalize;">🧪 {{ order.test.sample_type }}</span></td>
+                    <td>
+                        <!-- Fetch matching sample container number -->
+                        {% for sample in order.visit.samples.all %}
+                            {% if sample.sample_type == order.test.sample_type %}
+                                <code style="font-family: var(--font-mono); background: var(--gray-200); padding: 2px 6px; border-radius: 4px;">#{{ sample.container_number }}</code>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+                    </td>
+                    <td>
+                        <a href="{% url 'lab_enter_results' order.id %}" class="btn btn-primary btn-sm">🔬 Enter Values</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="table-empty">
+                        No samples currently waiting in the laboratory.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

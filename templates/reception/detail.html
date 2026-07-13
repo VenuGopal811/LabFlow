@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Visit Details — {{ visit.visit_id }}{% endblock %}
+{% block page_title %}Visit: {{ visit.visit_id }}{% endblock %}
+{% block breadcrumb %}Reception / Visit Detail{% endblock %}
+
+{% block header_actions %}
+<div class="btn-group">
+    <a href="{% url 'print_bill' visit.id %}" target="_blank" class="btn btn-outline">🖨️ Print Bill</a>
+    
+    {% if visit.status == 'registered' %}
+        <form method="post" action="{% url 'transition_to_payment_pending' visit.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning">💰 Mark Payment Pending</button>
+        </form>
+    {% endif %}
+    
+    {% if visit.status == 'report_ready' or visit.status == 'report_delivered' %}
+        <a href="{% url 'reports:download_report' visit.report_token %}" target="_blank" class="btn btn-success">📄 Download PDF Report</a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    
+    <!-- Left Column: Visit Information & Ordered Tests -->
+    <div>
+        <!-- Patient Details Card -->
+        <div class="card mb-3">
+            <div class="card-header flex-between">
+                <h3>Patient Demographics</h3>
+                <span class="badge badge-{{ visit.status }}">{{ visit.get_status_display }}</span>
+            </div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <p class="text-muted text-sm">PATIENT NAME</p>
+                        <p class="font-bold" style="font-size: 16px;">{{ visit.patient_name }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">MOBILE NUMBER</p>
+                        <p class="font-bold">{{ visit.phone }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">AGE & GENDER</p>
+                        <p class="font-bold">{{ visit.age }} Yrs / {{ visit.get_gender_display }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">REFERRED BY</p>
+                        <p class="font-bold">{{ visit.referred_by|default:"Self Referred" }}</p>
+                    </div>
+                    {% if visit.address %}
+                    <div style="grid-column: span 2;">
+                        <p class="text-muted text-sm">ADDRESS</p>
+                        <p>{{ visit.address }}</p>
+                    </div>
+                    {% endif %}
+                    {% if visit.notes %}
+                    <div style="grid-column: span 2;">
+                        <p class="text-muted text-sm">CLINICAL NOTES</p>
+                        <p style="background: var(--warning-bg); border-left: 3px solid var(--warning); padding: 8px; border-radius: var(--radius-sm);">{{ visit.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Ordered Tests & Results Status -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Ordered Diagnostic Tests</h3>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Test Name</th>
+                            <th>Sample Required</th>
+                            <th>Department</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in test_orders %}
+                        <tr>
+                            <td>
+                                <strong>{{ order.test.name }}</strong>
+                                {% if order.test.short_code %} ({{ order.test.short_code }}){% endif %}
+                            </td>
+                            <td><span style="text-transform: capitalize;">🧪 {{ order.test.sample_type }}</span></td>
+                            <td>{{ order.test.department }}</td>
+                            <td>₹{{ order.test.price }}</td>
+                            <td>
+                                <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Billing/Payment & Timeline -->
+    <div>
+        <!-- Payment Details Card -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3>Payment Details</h3>
+            </div>
+            <div class="card-body">
+                <div class="flex-between mb-1">
+                    <span>Total Amount:</span>
+                    <span class="font-bold" style="font-size: 16px;">₹{{ visit.total_amount }}</span>
+                </div>
+                {% if payment %}
+                    <hr class="mb-2" style="border:0; border-top:1px solid var(--gray-300);">
+                    <div class="flex-between mb-1">
+                        <span>Payment Method:</span>
+                        <span style="text-transform: uppercase;">{{ payment.get_method_display }}</span>
+                    </div>
+                    <div class="flex-between mb-1">
+                        <span>Status:</span>
+                        {% if payment.is_confirmed %}
+                            <span class="badge badge-payment_confirmed">Confirmed</span>
+                        {% else %}
+                            <span class="badge badge-payment_pending">Pending</span>
+                        {% endif %}
+                    </div>
+                    {% if payment.is_confirmed %}
+                        <div class="text-sm text-muted mt-1">
+                            Confirmed by {{ payment.confirmed_by.get_full_name|default:payment.confirmed_by.username }}<br>
+                            at {{ payment.confirmed_at|date:"d M Y, H:i" }}
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="alert alert-warning text-center mt-2">
+                        No payment record found.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Audit Log timeline -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Audit Timeline</h3>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    {% for log in audit_logs %}
+                    <div class="timeline-item">
+                        <div class="timeline-time">{{ log.timestamp|date:"d M, H:i" }}</div>
+                        <div class="timeline-text">
+                            <strong>{{ log.action|title }}</strong>
+                            {% if log.new_value %}
+                                <br><span class="text-sm">New: {{ log.new_value }}</span>
+                            {% endif %}
+                            {% if log.details %}
+                                <br><span class="text-sm text-muted">{{ log.details }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="timeline-actor">
+                            by {{ log.actor.get_full_name|default:log.actor.username|default:"System" }}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted text-center text-sm">No activity logged yet.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

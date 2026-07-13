@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Chamber Dashboard — LabFlow{% endblock %}
+{% block page_title %}Doctor's Chamber Dashboard{% endblock %}
+{% block breadcrumb %}Chamber / Home{% endblock %}
+
+{% block content %}
+<!-- Quick Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon orange">💰</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.pending_payments }}</div>
+            <div class="stat-label">Pending Payments</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon blue">🩺</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.awaiting_approval }}</div>
+            <div class="stat-label">Awaiting Chamber Approval</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.approved_today }}</div>
+            <div class="stat-label">Approved Today</div>
+        </div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <!-- 1. Pending Payments Queue -->
+    <div class="card">
+        <div class="card-header">
+            <h3>1. Payment Confirmation Queue</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Visit ID</th>
+                        <th>Patient</th>
+                        <th>Amount</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for visit in pending_payments %}
+                    <tr>
+                        <td><strong>{{ visit.visit_id }}</strong></td>
+                        <td>{{ visit.patient_name }}</td>
+                        <td>₹{{ visit.total_amount }}</td>
+                        <td>
+                            <form method="post" action="{% url 'chamber_confirm_payment' visit.id %}" style="display: inline-block;">
+                                {% csrf_token %}
+                                <input type="hidden" name="method" value="cash">
+                                <button type="submit" class="btn btn-warning btn-sm">💵 Confirm Cash</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="table-empty">
+                            No visits currently pending payment.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 2. Awaiting Chamber Approval Queue -->
+    <div class="card">
+        <div class="card-header">
+            <h3>2. Visit Approvals Queue</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Visit ID</th>
+                        <th>Patient</th>
+                        <th>Tests</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for visit in awaiting_approval %}
+                    <tr>
+                        <td><strong>{{ visit.visit_id }}</strong></td>
+                        <td>{{ visit.patient_name }}</td>
+                        <td>
+                            {% for order in visit.test_orders.all %}
+                                <span class="badge badge-registered">{{ order.test.short_code|default:order.test.name }}</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            <form method="post" action="{% url 'chamber_approve_visit' visit.id %}" style="display: inline-block;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-primary btn-sm">🚀 Approve & collection</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="table-empty">
+                            No visits awaiting approval.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

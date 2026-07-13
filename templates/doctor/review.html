@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Review Results — {{ order.test.name }}{% endblock %}
+{% block page_title %}Doctor Validation: {{ order.test.name }}{% endblock %}
+{% block breadcrumb %}Doctor / Review{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    <!-- Left Column: Results Verification & Correction Form -->
+    <div class="card">
+        <div class="card-header flex-between">
+            <h3>Verify Parameter Results</h3>
+            <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+        </div>
+        
+        <form method="post" action="{% url 'doctor_review' order.id %}" id="review-form">
+            {% csrf_token %}
+            <div class="card-body">
+                <!-- Patient Banner -->
+                <div style="background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 13px;">
+                    <div><strong>Patient:</strong> {{ order.visit.patient_name }}</div>
+                    <div><strong>Visit ID:</strong> {{ order.visit.visit_id }}</div>
+                    <div><strong>Age/Gender:</strong> {{ order.visit.age }} Yrs / {{ order.visit.get_gender_display }}</div>
+                </div>
+
+                <!-- Parameters Review Table -->
+                <table class="result-table mb-3">
+                    <thead>
+                        <tr>
+                            <th style="padding: 10px 14px;">Parameter Name</th>
+                            <th style="padding: 10px 14px; width: 220px;">Result Value (Editable)</th>
+                            <th style="padding: 10px 14px; width: 120px;">Unit</th>
+                            <th style="padding: 10px 14px; width: 160px;">Reference Range</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for field in param_fields %}
+                        <tr class="result-row">
+                            <td style="padding: 10px 14px;">
+                                <strong>{{ field.name }}</strong>
+                            </td>
+                            <td style="padding: 10px 14px;">
+                                <input type="text" name="param_{{ field.name }}" id="param_{{ field.name }}" 
+                                       class="form-control {% if field.abnormal %}result-abnormal{% else %}result-normal{% endif %}" 
+                                       value="{{ field.value }}" required>
+                            </td>
+                            <td style="padding: 10px 14px;"><span class="text-muted">{{ field.unit|default:"—" }}</span></td>
+                            <td style="padding: 10px 14px;"><span class="ref-range">{{ field.ref_range|default:"—" }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div class="form-group mt-2">
+                    <label for="reason">Edit / Flag Reason (Required for corrections, retests, recollections)</label>
+                    <textarea name="reason" id="reason" class="form-control" placeholder="E.g., High value rechecked; requesting recollection due to lipemia; value corrected from original typing."></textarea>
+                </div>
+            </div>
+
+            <!-- Form Actions Footer -->
+            <div class="card-footer flex-between">
+                <a href="{% url 'doctor_dashboard' %}" class="btn btn-outline">Cancel</a>
+                
+                <div class="btn-group">
+                    <button type="submit" name="action" value="recollect" class="btn btn-danger" onclick="return confirmAction('recollect')">🔄 Recollect</button>
+                    <button type="submit" name="action" value="retest" class="btn btn-warning" onclick="return confirmAction('retest')">🔄 Retest</button>
+                    <button type="submit" name="action" value="edit" class="btn btn-success" onclick="return confirmAction('edit')">✏️ Edit & Approve</button>
+                    <button type="submit" name="action" value="approve" class="btn btn-primary" style="background: var(--success); border-color: var(--success);" onclick="return confirmAction('approve')">✅ Approve As-Is</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Right Column: Context/Helpers -->
+    <div>
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3>Lab Entry Notes</h3>
+            </div>
+            <div class="card-body">
+                <p class="text-sm text-muted"><strong>Entered By:</strong> {{ order.result_entered_by.get_full_name|default:order.result_entered_by.username }}</p>
+                <p class="text-sm text-muted"><strong>Entered At:</strong> {{ order.result_entered_at|date:"d M Y, H:i" }}</p>
+                <hr class="mb-2" style="border:0; border-top:1px solid var(--gray-300);">
+                
+                <h4 style="font-size:12px; font-weight:600; color:var(--primary-700); margin-bottom: 5px;">COLLECTION REMARKS</h4>
+                {% for sample in order.visit.samples.all %}
+                    {% if sample.sample_type == order.test.sample_type and sample.notes %}
+                        <p class="text-sm" style="background:var(--gray-100); padding:8px; border-radius:4px; margin-bottom:8px;">
+                            <strong>Container #{{ sample.container_number }}:</strong> {{ sample.notes }}
+                        </p>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>Audit Guidelines</h3>
+            </div>
+            <div class="card-body text-sm" style="line-height: 1.6;">
+                <p>⚠️ <strong>Edit & Approve:</strong> Correcting a typed value will preserve the original input in the database and create a permanent audit log entry displaying the changed values side-by-side.</p>
+                <p class="mt-1">🔁 <strong>Retest:</strong> Restarts the lab testing workflow using the *same* drawn sample. The lab queue receives a fresh ticket.</p>
+                <p class="mt-1">🩸 <strong>Recollect:</strong> Demands drawing a fresh sample from the patient. Restarts the collection queue.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmAction(action) {
+    var reasonInput = document.getElementById('reason');
+    if (action === 'edit' || action === 'retest' || action === 'recollect') {
+        if (!reasonInput.value.trim()) {
+            alert('Please provide a reason/remark in the comment box before proceeding.');
+            reasonInput.focus();
+            return false;
+        }
+    }
+    return confirm('Are you sure you want to perform this action: ' + action.toUpperCase() + '?');
+}
+</script>
+{% endblock %}
