@@ -29,7 +29,7 @@ class ConsoleSMSBackend(SMSBackend):
         logger.info(f'[SMS] To: {phone}')
         logger.info(f'[SMS] Message: {message}')
         print(f'\n{"="*60}')
-        print(f'  📱 SMS NOTIFICATION (Console Backend)')
+        print(f'  SMS NOTIFICATION (Console Backend)')
         print(f'{"="*60}')
         print(f'  To:      {phone}')
         print(f'  Message: {message}')

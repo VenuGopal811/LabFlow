@@ -163,7 +163,7 @@
                             {% endif %}
                         </div>
                         <div class="timeline-actor">
-                            by {{ log.actor.get_full_name|default:log.actor.username|default:"System" }}
+                            by {{ log.actor_display }}
                         </div>
                     </div>
                     {% empty %}

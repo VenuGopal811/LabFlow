@@ -366,3 +366,9 @@ class AuditLog(models.Model):
     def __str__(self):
         actor_name = self.actor.get_full_name() or self.actor.username if self.actor else 'System'
         return f'[{self.timestamp:%Y-%m-%d %H:%M}] {actor_name}: {self.action} on {self.visit.visit_id}'
+
+    @property
+    def actor_display(self):
+        if self.actor:
+            return self.actor.get_full_name() or self.actor.username
+        return 'System'
