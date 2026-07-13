@@ -241,3 +241,24 @@ class ReportTokenTest(BaseTestCase):
         t1 = v1.generate_report_token()
         t2 = v2.generate_report_token()
         self.assertNotEqual(t1, t2)
+
+
+class SampleCollectionTransitionTest(BaseTestCase):
+    """Test visit transition to SAMPLE_COLLECTED."""
+
+    def test_visit_transitions_on_collection(self):
+        visit = self._create_visit()
+        # Progress visit to sent_to_collection
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+
+        self.assertEqual(visit.status, VisitStatus.SENT_TO_COLLECTION)
+
+        # Collect sample (CBC and LFT both use BLOOD, so collecting BLOOD collects all)
+        collect_sample(visit, SampleType.BLOOD, 'C-12345', self.collector)
+
+        visit.refresh_from_db()
+        self.assertEqual(visit.status, VisitStatus.SAMPLE_COLLECTED)
+

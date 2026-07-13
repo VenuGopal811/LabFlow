@@ -25,7 +25,8 @@ VISIT_TRANSITIONS = {
     VisitStatus.PAYMENT_PENDING: [VisitStatus.PAYMENT_CONFIRMED],
     VisitStatus.PAYMENT_CONFIRMED: [VisitStatus.APPROVED_BY_CHAMBER],
     VisitStatus.APPROVED_BY_CHAMBER: [VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.SENT_TO_COLLECTION: [VisitStatus.DOCTOR_REVIEWED],
+    VisitStatus.SENT_TO_COLLECTION: [VisitStatus.SAMPLE_COLLECTED],
+    VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED],
     VisitStatus.DOCTOR_REVIEWED: [VisitStatus.REPORT_READY],
     VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED],
 }
@@ -206,7 +207,10 @@ def check_visit_completion(visit, actor):
 
     # Walk the visit through intermediate states if needed
     # Visit should be at sent_to_collection or later at this point
-    if visit.status == VisitStatus.SENT_TO_COLLECTION:
+    if visit.status in (VisitStatus.SENT_TO_COLLECTION, VisitStatus.SAMPLE_COLLECTED):
+        if visit.status == VisitStatus.SENT_TO_COLLECTION:
+            transition_visit_status(visit, VisitStatus.SAMPLE_COLLECTED, actor,
+                                    'All samples collected (auto-promoted).')
         transition_visit_status(visit, VisitStatus.DOCTOR_REVIEWED, actor,
                                 'All tests reviewed by doctor.')
         transition_visit_status(visit, VisitStatus.REPORT_READY, actor,
@@ -284,6 +288,11 @@ def collect_sample(visit, sample_type, container_number, actor, notes=''):
         new_value=f'Container #{container_number} ({sample_type})',
         actor=actor,
     )
+
+    # Transition visit status if all orders have had samples collected
+    all_collected = not visit.test_orders.filter(status=TestOrderStatus.PENDING).exists()
+    if all_collected and visit.status == VisitStatus.SENT_TO_COLLECTION:
+        transition_visit_status(visit, VisitStatus.SAMPLE_COLLECTED, actor, "All samples collected")
 
     return sample
 

@@ -22,6 +22,7 @@ class VisitStatus(models.TextChoices):
     PAYMENT_CONFIRMED = 'payment_confirmed', 'Payment Confirmed'
     APPROVED_BY_CHAMBER = 'approved_by_chamber', 'Approved by Chamber'
     SENT_TO_COLLECTION = 'sent_to_collection', 'Sent to Collection'
+    SAMPLE_COLLECTED = 'sample_collected', 'Sample Drawn'
     DOCTOR_REVIEWED = 'doctor_reviewed', 'Doctor Reviewed'
     REPORT_READY = 'report_ready', 'Report Ready'
     REPORT_DELIVERED = 'report_delivered', 'Report Delivered'

@@ -38,6 +38,10 @@
                     <span class="nav-icon">🩺</span>
                     <span>Approvals & Review</span>
                 </a>
+                <a href="{% url 'doctor_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'doctor_dashboard' or request.resolver_match.url_name == 'doctor_review' %}active{% endif %}">
+                    <span class="nav-icon">👨‍⚕️</span>
+                    <span>Results Verification</span>
+                </a>
                 {% endif %}
                 
                 <!-- Collection Role Navigation -->
