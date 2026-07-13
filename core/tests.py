@@ -205,6 +205,16 @@ class ResultEditTest(BaseTestCase):
         self.assertIsNotNone(log)
         self.assertEqual(log.actor, self.doctor)
 
+    def test_invalid_non_numeric_result_raises(self):
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+
+        transition_test_order_status(order, TestOrderStatus.SAMPLE_COLLECTED, self.collector)
+        transition_test_order_status(order, TestOrderStatus.TESTING, self.lab_tech)
+
+        with self.assertRaises(TransitionError):
+            enter_test_result(order, {'Hemoglobin': 'not-a-number'}, self.lab_tech)
+
 
 class VisitCompletionTest(BaseTestCase):
     """Test auto-promotion when all tests are ready."""
@@ -285,4 +295,73 @@ class SampleCollectionTransitionTest(BaseTestCase):
         visit.refresh_from_db()
         # Visit status should have reverted back to SENT_TO_COLLECTION
         self.assertEqual(visit.status, VisitStatus.SENT_TO_COLLECTION)
+
+    def test_recollect_reverts_from_report_ready(self):
+        visit = self._create_visit()
+        # Progress visit to REPORT_READY
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+        collect_sample(visit, SampleType.BLOOD, 'C-12345', self.collector)
+        
+        # Complete all test orders
+        for order in visit.test_orders.all():
+            order.status = TestOrderStatus.REPORT_READY
+            order.save()
+        check_visit_completion(visit, self.doctor)
+        
+        visit.refresh_from_db()
+        self.assertEqual(visit.status, VisitStatus.REPORT_DELIVERED)
+        
+        # Now trigger recollection on CBC
+        order = visit.test_orders.filter(test__short_code='CBC').first()
+        order.status = TestOrderStatus.RESULT_ENTERED
+        order.save()
+        
+        transition_test_order_status(order, TestOrderStatus.RECOLLECTION_REQUIRED, self.doctor)
+        
+        visit.refresh_from_db()
+        # Visit status should have reverted back to SENT_TO_COLLECTION
+        self.assertEqual(visit.status, VisitStatus.SENT_TO_COLLECTION)
+
+
+class PhoneValidationFormTest(BaseTestCase):
+    """Test phone number validation in VisitRegistrationForm."""
+
+    def test_valid_phone_formats(self):
+        from core.forms import VisitRegistrationForm
+        data = {
+            'patient_name': 'Valid Patient',
+            'age': 30,
+            'gender': 'M',
+            'phone': '9876543210',
+            'tests': [self.cbc.id]
+        }
+        form = VisitRegistrationForm(data=data)
+        self.assertTrue(form.is_valid())
+
+        # Test with country code prefix
+        data['phone'] = '+919876543210'
+        form = VisitRegistrationForm(data=data)
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data['phone'], '9876543210')
+
+    def test_invalid_phone_formats(self):
+        from core.forms import VisitRegistrationForm
+        data = {
+            'patient_name': 'Invalid Patient',
+            'age': 30,
+            'gender': 'M',
+            'phone': 'not-a-number',
+            'tests': [self.cbc.id]
+        }
+        form = VisitRegistrationForm(data=data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('phone', form.errors)
+
+        # Test too short
+        data['phone'] = '12345'
+        form = VisitRegistrationForm(data=data)
+        self.assertFalse(form.is_valid())
 

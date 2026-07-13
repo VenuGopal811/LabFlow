@@ -28,7 +28,8 @@ VISIT_TRANSITIONS = {
     VisitStatus.SENT_TO_COLLECTION: [VisitStatus.SAMPLE_COLLECTED],
     VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED, VisitStatus.SENT_TO_COLLECTION],
     VisitStatus.DOCTOR_REVIEWED: [VisitStatus.REPORT_READY, VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED],
+    VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED, VisitStatus.SENT_TO_COLLECTION],
+    VisitStatus.REPORT_DELIVERED: [VisitStatus.SENT_TO_COLLECTION],
 }
 
 TEST_ORDER_TRANSITIONS = {
@@ -115,7 +116,8 @@ def transition_test_order_status(test_order, new_status, actor, details=''):
 
     # Revert visit status back to SENT_TO_COLLECTION if recollection is requested
     if new_status == TestOrderStatus.RECOLLECTION_REQUIRED:
-        if test_order.visit.status in (VisitStatus.SAMPLE_COLLECTED, VisitStatus.DOCTOR_REVIEWED):
+        if test_order.visit.status in (VisitStatus.SAMPLE_COLLECTED, VisitStatus.DOCTOR_REVIEWED,
+                                       VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
             transition_visit_status(
                 test_order.visit,
                 VisitStatus.SENT_TO_COLLECTION,
@@ -142,6 +144,28 @@ def transition_test_order_status(test_order, new_status, actor, details=''):
 
 # ── Result editing ─────────────────────────────────────────────────
 
+def validate_parameter_results(test_catalog, result_value):
+    """
+    Validate that result values correspond to the expected types in the catalog.
+    If a parameter has numeric reference limits, the entered value must be a valid float.
+    """
+    parameters = test_catalog.parameters
+    for param in parameters:
+        name = param.get('name')
+        val = result_value.get(name, '')
+        if val is not None:
+            val = str(val).strip()
+            
+        # Check if it has a numeric reference range
+        is_numeric = (param.get('ref_min') is not None) or (param.get('ref_max') is not None)
+        
+        if is_numeric and val:
+            try:
+                float(val)
+            except ValueError:
+                raise TransitionError(f"Value for parameter '{name}' must be a number (got '{val}').")
+
+
 def enter_test_result(test_order, result_value, actor):
     """
     Enter test results for a test order.
@@ -152,6 +176,8 @@ def enter_test_result(test_order, result_value, actor):
             f'Cannot enter results for test order in status "{test_order.status}". '
             f'Must be in "testing" status.'
         )
+
+    validate_parameter_results(test_order.test, result_value)
 
     test_order.result_value = result_value
     test_order.result_entered_by = actor
@@ -183,6 +209,8 @@ def edit_test_result(test_order, new_value, actor, reason=''):
             f'Cannot edit results for test order in status "{test_order.status}". '
             f'Must be in "result_entered" status.'
         )
+
+    validate_parameter_results(test_order.test, new_value)
 
     # Preserve original value (only if not already preserved)
     if test_order.original_value is None:

@@ -9,7 +9,19 @@ class VisitRegistrationForm(forms.ModelForm):
         required=True,
         help_text="Select one or more tests for this visit"
     )
-
+    def clean_phone(self):
+        phone = self.cleaned_data.get('phone', '').strip()
+        # Keep only digits
+        stripped = ''.join(c for c in phone if c.isdigit())
+        
+        # Handle country code (12 digits starting with 91)
+        if (phone.startswith('+91') or phone.startswith('91')) and len(stripped) == 12:
+            stripped = stripped[-10:]
+            
+        if len(stripped) != 10:
+            raise forms.ValidationError("Please enter a valid 10-digit mobile number.")
+            
+        return stripped
     class Meta:
         model = Visit
         fields = ['patient_name', 'age', 'gender', 'phone', 'address', 'referred_by', 'notes']
