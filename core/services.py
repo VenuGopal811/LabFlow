@@ -26,8 +26,8 @@ VISIT_TRANSITIONS = {
     VisitStatus.PAYMENT_CONFIRMED: [VisitStatus.APPROVED_BY_CHAMBER],
     VisitStatus.APPROVED_BY_CHAMBER: [VisitStatus.SENT_TO_COLLECTION],
     VisitStatus.SENT_TO_COLLECTION: [VisitStatus.SAMPLE_COLLECTED],
-    VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED],
-    VisitStatus.DOCTOR_REVIEWED: [VisitStatus.REPORT_READY],
+    VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED, VisitStatus.SENT_TO_COLLECTION],
+    VisitStatus.DOCTOR_REVIEWED: [VisitStatus.REPORT_READY, VisitStatus.SENT_TO_COLLECTION],
     VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED],
 }
 
@@ -112,6 +112,16 @@ def transition_test_order_status(test_order, new_status, actor, details=''):
         update_fields.extend(['reviewed_by', 'reviewed_at'])
 
     test_order.save(update_fields=update_fields)
+
+    # Revert visit status back to SENT_TO_COLLECTION if recollection is requested
+    if new_status == TestOrderStatus.RECOLLECTION_REQUIRED:
+        if test_order.visit.status in (VisitStatus.SAMPLE_COLLECTED, VisitStatus.DOCTOR_REVIEWED):
+            transition_visit_status(
+                test_order.visit,
+                VisitStatus.SENT_TO_COLLECTION,
+                actor,
+                details=f"Recollection requested for {test_order.test.name} - moving visit back to collection queue"
+            )
 
     AuditLog.objects.create(
         visit=test_order.visit,
@@ -274,7 +284,7 @@ def collect_sample(visit, sample_type, container_number, actor, notes=''):
     # Mark test orders for this sample type as collected
     test_orders = visit.test_orders.filter(
         test__sample_type=sample_type,
-        status=TestOrderStatus.PENDING,
+        status__in=[TestOrderStatus.PENDING, TestOrderStatus.RECOLLECTION_REQUIRED],
     )
     for order in test_orders:
         transition_test_order_status(
@@ -290,7 +300,9 @@ def collect_sample(visit, sample_type, container_number, actor, notes=''):
     )
 
     # Transition visit status if all orders have had samples collected
-    all_collected = not visit.test_orders.filter(status=TestOrderStatus.PENDING).exists()
+    all_collected = not visit.test_orders.filter(
+        status__in=[TestOrderStatus.PENDING, TestOrderStatus.RECOLLECTION_REQUIRED]
+    ).exists()
     if all_collected and visit.status == VisitStatus.SENT_TO_COLLECTION:
         transition_visit_status(visit, VisitStatus.SAMPLE_COLLECTED, actor, "All samples collected")
 

@@ -262,3 +262,27 @@ class SampleCollectionTransitionTest(BaseTestCase):
         visit.refresh_from_db()
         self.assertEqual(visit.status, VisitStatus.SAMPLE_COLLECTED)
 
+    def test_recollect_reverts_visit_status(self):
+        visit = self._create_visit()
+        # Progress visit to SAMPLE_COLLECTED
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+        collect_sample(visit, SampleType.BLOOD, 'C-12345', self.collector)
+
+        visit.refresh_from_db()
+        self.assertEqual(visit.status, VisitStatus.SAMPLE_COLLECTED)
+
+        # Trigger recollection for CBC
+        order = visit.test_orders.filter(test__short_code='CBC').first()
+        # Ensure status is RESULT_ENTERED first so it can transition to RECOLLECTION_REQUIRED
+        order.status = TestOrderStatus.RESULT_ENTERED
+        order.save()
+
+        transition_test_order_status(order, TestOrderStatus.RECOLLECTION_REQUIRED, self.doctor)
+
+        visit.refresh_from_db()
+        # Visit status should have reverted back to SENT_TO_COLLECTION
+        self.assertEqual(visit.status, VisitStatus.SENT_TO_COLLECTION)
+

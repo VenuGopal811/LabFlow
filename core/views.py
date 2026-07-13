@@ -269,10 +269,10 @@ def collection_collect(request, visit_id):
         
     visit = get_object_or_404(Visit, id=visit_id)
     
-    # We need to collect samples matching the sample types needed by the test orders of this visit
-    test_orders = visit.test_orders.all()
+    # We need to collect samples matching the sample types needed by the test orders that need collection
+    pending_orders = visit.test_orders.filter(status__in=[TestOrderStatus.PENDING, TestOrderStatus.RECOLLECTION_REQUIRED])
     # Group required sample types
-    required_samples = list(set(order.test.sample_type for order in test_orders))
+    required_samples = list(set(order.test.sample_type for order in pending_orders))
     
     if request.method == 'POST':
         # Process sample container numbers
@@ -322,9 +322,9 @@ def lab_dashboard(request):
     if not in_group(request.user, ['lab']):
         return HttpResponseForbidden("Access Denied.")
         
-    # Queue is TestOrder records in SAMPLE_COLLECTED or TESTING status
+    # Queue is TestOrder records in SAMPLE_COLLECTED, TESTING, or RETEST_REQUIRED status
     lab_queue = TestOrder.objects.filter(
-        status__in=[TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.TESTING]
+        status__in=[TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.TESTING, TestOrderStatus.RETEST_REQUIRED]
     ).select_related('visit', 'test').order_by('created_at')
     
     # Stats
@@ -349,8 +349,8 @@ def lab_enter_results(request, order_id):
         
     order = get_object_or_404(TestOrder, id=order_id)
     
-    # Transition to testing status once opened in lab, if it was in sample_collected
-    if order.status == TestOrderStatus.SAMPLE_COLLECTED:
+    # Transition to testing status once opened in lab, if it was in sample_collected or retest_required
+    if order.status in (TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.RETEST_REQUIRED):
         try:
             transition_test_order_status(order, TestOrderStatus.TESTING, request.user, "Started result entry process in laboratory")
         except TransitionError as e:
