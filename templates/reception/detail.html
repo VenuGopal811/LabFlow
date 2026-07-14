@@ -16,6 +16,10 @@
     {% endif %}
     
     {% if visit.status == 'report_ready' or visit.status == 'report_delivered' %}
+        <form method="post" action="{% url 'send_report_sms' visit.id %}" style="display: inline-block;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">📱 Send SMS Report</button>
+        </form>
         <a href="{% url 'reports:download_report' visit.report_token %}" target="_blank" class="btn btn-success">📄 Download PDF Report</a>
     {% endif %}
 </div>

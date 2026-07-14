@@ -34,31 +34,37 @@
                 <tr>
                     <th>Visit ID</th>
                     <th>Patient Name</th>
-                    <th>Test / Panel Name</th>
+                    <th>Tests Awaiting Review</th>
                     <th>Entered By</th>
-                    <th>Entered At</th>
-                    <th>Status</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody>
-                {% for order in queue %}
+                {% for group in grouped_queue %}
                 <tr>
-                    <td><strong>{{ order.visit.visit_id }}</strong></td>
-                    <td>{{ order.visit.patient_name }}</td>
-                    <td><strong>{{ order.test.name }}</strong> {% if order.test.short_code %}({{ order.test.short_code }}){% endif %}</td>
-                    <td>{{ order.result_entered_by.get_full_name|default:order.result_entered_by.username }}</td>
-                    <td>{{ order.result_entered_at|date:"d M, H:i" }}</td>
+                    <td><strong>{{ group.visit.visit_id }}</strong></td>
+                    <td>{{ group.visit.patient_name }}</td>
                     <td>
-                        <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+                        {% for order in group.orders %}
+                            <span class="badge badge-{{ order.status }}" style="margin: 2px 0;">
+                                {{ order.test.short_code|default:order.test.name }}
+                            </span>
+                        {% endfor %}
                     </td>
                     <td>
-                        <a href="{% url 'doctor_review' order.id %}" class="btn btn-primary btn-sm">👨‍⚕️ Review Results</a>
+                        {% for order in group.orders %}
+                            {% if forloop.first %}
+                                {{ order.result_entered_by.get_full_name|default:order.result_entered_by.username }}
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <a href="{% url 'doctor_review_visit' group.visit.id %}" class="btn btn-primary btn-sm">👨‍⚕️ Review All Results</a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="table-empty">
+                    <td colspan="5" class="table-empty">
                         No results currently awaiting review. Great job!
                     </td>
                 </tr>

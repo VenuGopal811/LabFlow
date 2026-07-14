@@ -1,122 +1,163 @@
 {% extends "base.html" %}
 
-{% block title %}Review Results — {{ order.test.name }}{% endblock %}
-{% block page_title %}Doctor Validation: {{ order.test.name }}{% endblock %}
+{% block title %}Review Results — {{ visit.patient_name }} — LabFlow{% endblock %}
+{% block page_title %}Doctor Validation: {{ visit.patient_name }}{% endblock %}
 {% block breadcrumb %}Doctor / Review{% endblock %}
 
 {% block content %}
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-    <!-- Left Column: Results Verification & Correction Form -->
-    <div class="card">
+<form method="post" action="{% url 'doctor_review_visit' visit.id %}" id="review-form">
+    {% csrf_token %}
+
+    <!-- Patient Banner -->
+    <div class="card mb-3">
+        <div class="card-body" style="padding: 16px 20px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; font-size: 13px;">
+                <div><strong>Patient:</strong> {{ visit.patient_name }}</div>
+                <div><strong>Visit ID:</strong> {{ visit.visit_id }}</div>
+                <div><strong>Age/Gender:</strong> {{ visit.age }} Yrs / {{ visit.get_gender_display }}</div>
+                <div><strong>Tests to Review:</strong> {{ orders_with_fields|length }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Test Results -->
+    {% for item in orders_with_fields %}
+    <div class="card mb-3 review-test-card" data-order-id="{{ item.order.id }}">
         <div class="card-header flex-between">
-            <h3>Verify Parameter Results</h3>
-            <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
-        </div>
-        
-        <form method="post" action="{% url 'doctor_review' order.id %}" id="review-form">
-            {% csrf_token %}
-            <div class="card-body">
-                <!-- Patient Banner -->
-                <div style="background: var(--primary-50); border: 1px solid var(--primary-100); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 13px;">
-                    <div><strong>Patient:</strong> {{ order.visit.patient_name }}</div>
-                    <div><strong>Visit ID:</strong> {{ order.visit.visit_id }}</div>
-                    <div><strong>Age/Gender:</strong> {{ order.visit.age }} Yrs / {{ order.visit.get_gender_display }}</div>
-                </div>
-
-                <!-- Parameters Review Table -->
-                <table class="result-table mb-3">
-                    <thead>
-                        <tr>
-                            <th style="padding: 10px 14px;">Parameter Name</th>
-                            <th style="padding: 10px 14px; width: 220px;">Result Value (Editable)</th>
-                            <th style="padding: 10px 14px; width: 120px;">Unit</th>
-                            <th style="padding: 10px 14px; width: 160px;">Reference Range</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for field in param_fields %}
-                        <tr class="result-row">
-                            <td style="padding: 10px 14px;">
-                                <strong>{{ field.name }}</strong>
-                            </td>
-                            <td style="padding: 10px 14px;">
-                                <input type="text" name="param_{{ field.name }}" id="param_{{ field.name }}" 
-                                       class="form-control {% if field.abnormal %}result-abnormal{% else %}result-normal{% endif %}" 
-                                       value="{{ field.value }}" required>
-                            </td>
-                            <td style="padding: 10px 14px;"><span class="text-muted">{{ field.unit|default:"—" }}</span></td>
-                            <td style="padding: 10px 14px;"><span class="ref-range">{{ field.ref_range|default:"—" }}</span></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-
-                <div class="form-group mt-2">
-                    <label for="reason">Edit / Flag Reason (Required for corrections, retests, recollections)</label>
-                    <textarea name="reason" id="reason" class="form-control" placeholder="E.g., High value rechecked; requesting recollection due to lipemia; value corrected from original typing."></textarea>
-                </div>
-            </div>
-
-            <!-- Form Actions Footer -->
-            <div class="card-footer flex-between">
-                <a href="{% url 'doctor_dashboard' %}" class="btn btn-outline">Cancel</a>
-                
-                <div class="btn-group">
-                    <button type="submit" name="action" value="recollect" class="btn btn-danger" onclick="return confirmAction('recollect')">🔄 Recollect</button>
-                    <button type="submit" name="action" value="retest" class="btn btn-warning" onclick="return confirmAction('retest')">🔄 Retest</button>
-                    <button type="submit" name="action" value="edit" class="btn btn-success" onclick="return confirmAction('edit')">✏️ Edit & Approve</button>
-                    <button type="submit" name="action" value="approve" class="btn btn-primary" style="background: var(--success); border-color: var(--success);" onclick="return confirmAction('approve')">✅ Approve As-Is</button>
-                </div>
-            </div>
-        </form>
-    </div>
-
-    <!-- Right Column: Context/Helpers -->
-    <div>
-        <div class="card mb-3">
-            <div class="card-header">
-                <h3>Lab Entry Notes</h3>
-            </div>
-            <div class="card-body">
-                <p class="text-sm text-muted"><strong>Entered By:</strong> {{ order.result_entered_by.get_full_name|default:order.result_entered_by.username }}</p>
-                <p class="text-sm text-muted"><strong>Entered At:</strong> {{ order.result_entered_at|date:"d M Y, H:i" }}</p>
-                <hr class="mb-2" style="border:0; border-top:1px solid var(--gray-300);">
-                
-                <h4 style="font-size:12px; font-weight:600; color:var(--primary-700); margin-bottom: 5px;">COLLECTION REMARKS</h4>
-                {% for sample in order.visit.samples.all %}
-                    {% if sample.sample_type == order.test.sample_type and sample.notes %}
-                        <p class="text-sm" style="background:var(--gray-100); padding:8px; border-radius:4px; margin-bottom:8px;">
-                            <strong>Container #{{ sample.container_number }}:</strong> {{ sample.notes }}
-                        </p>
-                    {% endif %}
-                {% endfor %}
+            <h3>
+                <span style="font-size: 16px;">🧪</span>
+                {{ item.order.test.name }}
+                {% if item.order.test.short_code %}
+                    <span style="color: var(--gray-500); font-weight: 400;">({{ item.order.test.short_code }})</span>
+                {% endif %}
+            </h3>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge badge-{{ item.order.status }}">{{ item.order.get_status_display }}</span>
+                {% if item.order.result_entered_by %}
+                <span class="text-sm text-muted">
+                    by {{ item.order.result_entered_by.get_full_name|default:item.order.result_entered_by.username }}
+                    {% if item.order.result_entered_at %} at {{ item.order.result_entered_at|date:"d M, H:i" }}{% endif %}
+                </span>
+                {% endif %}
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <h3>Audit Guidelines</h3>
+        <div class="card-body" style="padding: 0;">
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th style="padding: 10px 14px;">Parameter Name</th>
+                        <th style="padding: 10px 14px; width: 220px;">Result Value (Editable)</th>
+                        <th style="padding: 10px 14px; width: 120px;">Unit</th>
+                        <th style="padding: 10px 14px; width: 160px;">Reference Range</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for field in item.param_fields %}
+                    <tr class="result-row">
+                        <td style="padding: 10px 14px;">
+                            <strong>{{ field.name }}</strong>
+                        </td>
+                        <td style="padding: 10px 14px;">
+                            <input type="text"
+                                   name="order_{{ item.order.id }}_param_{{ field.name }}"
+                                   id="order_{{ item.order.id }}_param_{{ field.name }}"
+                                   class="form-control {% if field.abnormal %}result-abnormal{% else %}result-normal{% endif %}"
+                                   value="{{ field.value }}">
+                        </td>
+                        <td style="padding: 10px 14px;"><span class="text-muted">{{ field.unit|default:"—" }}</span></td>
+                        <td style="padding: 10px 14px;"><span class="ref-range">{{ field.ref_range|default:"—" }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Per-test action selector -->
+        <div class="card-footer" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <span class="text-sm text-muted">Action for <strong>{{ item.order.test.short_code|default:item.order.test.name }}</strong>:</span>
+            <div class="btn-group">
+                <button type="button" class="btn btn-danger btn-sm action-btn" data-order="{{ item.order.id }}" data-action="recollect" onclick="setAction(this)">🔄 Recollect</button>
+                <button type="button" class="btn btn-warning btn-sm action-btn" data-order="{{ item.order.id }}" data-action="retest" onclick="setAction(this)">🔄 Retest</button>
+                <button type="button" class="btn btn-success btn-sm action-btn" data-order="{{ item.order.id }}" data-action="edit" onclick="setAction(this)">✏️ Edit & Approve</button>
+                <button type="button" class="btn btn-primary btn-sm action-btn" style="background: var(--success); border-color: var(--success);" data-order="{{ item.order.id }}" data-action="approve" onclick="setAction(this)">✅ Approve</button>
             </div>
-            <div class="card-body text-sm" style="line-height: 1.6;">
-                <p>⚠️ <strong>Edit & Approve:</strong> Correcting a typed value will preserve the original input in the database and create a permanent audit log entry displaying the changed values side-by-side.</p>
-                <p class="mt-1">🔁 <strong>Retest:</strong> Restarts the lab testing workflow using the *same* drawn sample. The lab queue receives a fresh ticket.</p>
-                <p class="mt-1">🩸 <strong>Recollect:</strong> Demands drawing a fresh sample from the patient. Restarts the collection queue.</p>
-            </div>
+            <!-- Hidden input to hold the selected action -->
+            <input type="hidden" name="action_{{ item.order.id }}" id="action_{{ item.order.id }}" value="">
         </div>
     </div>
-</div>
+    {% endfor %}
+
+    <!-- Shared reason + submit bar -->
+    <div class="card">
+        <div class="card-body">
+            <div class="form-group mb-2">
+                <label for="reason">Edit / Flag Reason (Required for corrections, retests, recollections)</label>
+                <textarea name="reason" id="reason" class="form-control" placeholder="E.g., High value rechecked; requesting recollection due to lipemia; value corrected from original typing."></textarea>
+            </div>
+
+            <div style="background: var(--info-bg); border-left: 3px solid var(--info); padding: 10px; border-radius: var(--radius-sm); font-size: 12px; color: #084298; display: flex; align-items: center; gap: 8px;">
+                <span>💡</span>
+                <span>Select an action for each test above, then click <strong>Submit All Decisions</strong>. "Approve" keeps the values as-is. "Edit & Approve" uses any edits you've made in the fields above.</span>
+            </div>
+        </div>
+        <div class="card-footer flex-between">
+            <a href="{% url 'doctor_dashboard' %}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-lg" id="submit-btn" onclick="return validateSubmit()">👨‍⚕️ Submit All Decisions</button>
+        </div>
+    </div>
+</form>
 
 <script>
-function confirmAction(action) {
-    var reasonInput = document.getElementById('reason');
-    if (action === 'edit' || action === 'retest' || action === 'recollect') {
-        if (!reasonInput.value.trim()) {
-            alert('Please provide a reason/remark in the comment box before proceeding.');
-            reasonInput.focus();
-            return false;
-        }
+function setAction(btn) {
+    var orderId = btn.getAttribute('data-order');
+    var action = btn.getAttribute('data-action');
+    var hiddenInput = document.getElementById('action_' + orderId);
+
+    // Toggle: if already selected, deselect
+    if (hiddenInput.value === action) {
+        hiddenInput.value = '';
+        btn.classList.remove('action-selected');
+        return;
     }
-    return confirm('Are you sure you want to perform this action: ' + action.toUpperCase() + '?');
+
+    hiddenInput.value = action;
+
+    // Remove highlight from siblings
+    var card = btn.closest('.review-test-card');
+    card.querySelectorAll('.action-btn').forEach(function(b) {
+        b.classList.remove('action-selected');
+    });
+    btn.classList.add('action-selected');
+}
+
+function validateSubmit() {
+    var actionInputs = document.querySelectorAll('input[id^="action_"]');
+    var hasAnyAction = false;
+    var needsReason = false;
+    var reasonField = document.getElementById('reason');
+
+    actionInputs.forEach(function(input) {
+        if (input.value) {
+            hasAnyAction = true;
+            if (input.value === 'edit' || input.value === 'retest' || input.value === 'recollect') {
+                needsReason = true;
+            }
+        }
+    });
+
+    if (!hasAnyAction) {
+        alert('Please select an action (Approve, Edit, Retest, or Recollect) for at least one test before submitting.');
+        return false;
+    }
+
+    if (needsReason && !reasonField.value.trim()) {
+        alert('Please provide a reason/remark in the comment box for edits, retests, or recollections.');
+        reasonField.focus();
+        return false;
+    }
+
+    return confirm('Are you sure you want to submit these decisions?');
 }
 </script>
 {% endblock %}

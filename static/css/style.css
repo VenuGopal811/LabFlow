@@ -379,6 +379,49 @@ table tbody tr.clickable-row {
     font-size: 14px;
 }
 
+/* ── Grouped Table Rows (multi-test per patient) ─────────────────── */
+/* Remove bottom border between rows of the same group */
+table tbody tr.grouped-row > td {
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+/* Patient info cells that span multiple rows */
+table tbody td.group-cell {
+    vertical-align: middle;
+    background: var(--primary-50);
+    border-left: 3px solid var(--primary-500);
+    font-weight: 500;
+}
+
+/* Visual separator between different patient groups */
+table tbody tr.group-first > td {
+    border-top: 2px solid var(--primary-200);
+}
+table tbody tr.group-first > td.group-cell {
+    border-top: 2px solid var(--primary-200);
+}
+
+/* ── Doctor Review Action Buttons ────────────────────────────────── */
+.action-btn {
+    opacity: 0.7;
+    transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+    opacity: 1;
+}
+
+.action-btn.action-selected {
+    opacity: 1;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.15), var(--shadow-md);
+    transform: scale(1.05);
+}
+
+.review-test-card {
+    transition: border-color 0.2s ease;
+}
+
+
 /* ── Status Badges ───────────────────────────────────────────────── */
 .badge {
     display: inline-block;

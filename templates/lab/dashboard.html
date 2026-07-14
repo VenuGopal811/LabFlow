@@ -34,38 +34,39 @@
                 <tr>
                     <th>Visit ID</th>
                     <th>Patient Name</th>
-                    <th>Test / Panel Name</th>
-                    <th>Sample Type</th>
-                    <th>Container Code</th>
-                    <th>Status</th>
+                    <th>Tests Pending</th>
+                    <th>Sample Types</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody>
-                {% for order in queue %}
+                {% for group in grouped_queue %}
                 <tr>
-                    <td><strong>{{ order.visit.visit_id }}</strong></td>
-                    <td>{{ order.visit.patient_name }}</td>
-                    <td><strong>{{ order.test.name }}</strong> {% if order.test.short_code %}({{ order.test.short_code }}){% endif %}</td>
-                    <td><span style="text-transform: capitalize;">🧪 {{ order.test.sample_type }}</span></td>
+                    <td><strong>{{ group.visit.visit_id }}</strong></td>
+                    <td>{{ group.visit.patient_name }}</td>
                     <td>
-                        <!-- Fetch matching sample container number -->
-                        {% for sample in order.visit.samples.all %}
-                            {% if sample.sample_type == order.test.sample_type %}
-                                <code style="font-family: var(--font-mono); background: var(--gray-200); padding: 2px 6px; border-radius: 4px;">#{{ sample.container_number }}</code>
-                            {% endif %}
+                        {% for order in group.orders %}
+                            <span class="badge badge-{{ order.status }}" style="margin: 2px 0;">
+                                {{ order.test.short_code|default:order.test.name }}
+                            </span>
                         {% endfor %}
                     </td>
                     <td>
-                        <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+                        {% for order in group.orders %}
+                            {% for sample in order.visit.samples.all %}
+                                {% if sample.sample_type == order.test.sample_type %}
+                                    <code style="font-family: var(--font-mono); background: var(--gray-200); padding: 2px 6px; border-radius: 4px; margin: 1px;">#{{ sample.container_number }} ({{ order.test.get_sample_type_display|default:order.test.sample_type }})</code>
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
                     </td>
                     <td>
-                        <a href="{% url 'lab_enter_results' order.id %}" class="btn btn-primary btn-sm">🔬 Enter Values</a>
+                        <a href="{% url 'lab_enter_results_visit' group.visit.id %}" class="btn btn-primary btn-sm">🔬 Enter All Values</a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="table-empty">
+                    <td colspan="5" class="table-empty">
                         No samples currently waiting in the laboratory.
                     </td>
                 </tr>

@@ -365,3 +365,26 @@ class PhoneValidationFormTest(BaseTestCase):
         form = VisitRegistrationForm(data=data)
         self.assertFalse(form.is_valid())
 
+
+class SendSMSViewTest(BaseTestCase):
+    """Test manual send SMS report action."""
+
+    def test_send_sms_action(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        
+        # Complete all test orders to make it REPORT_READY
+        for order in visit.test_orders.all():
+            order.status = TestOrderStatus.REPORT_READY
+            order.save()
+        check_visit_completion(visit, self.doctor)
+        
+        # Log in and post to send-sms URL
+        self.client.force_login(self.receptionist)
+        url = reverse('send_report_sms', kwargs={'visit_id': visit.id})
+        response = self.client.post(url)
+        
+        self.assertEqual(response.status_code, 302)
+        # Verify it logs the dispatch
+        self.assertTrue(visit.audit_logs.filter(action='sms_sent').exists())
+

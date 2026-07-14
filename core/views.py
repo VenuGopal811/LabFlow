@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
@@ -165,6 +166,18 @@ def transition_to_payment_pending(request, visit_id):
     return redirect('visit_detail', visit_id=visit.id)
 
 
+@login_required
+def send_report_sms(request, visit_id):
+    visit = get_object_or_404(Visit, id=visit_id)
+    try:
+        trigger_report_sms(visit, request.user)
+        messages.success(request, f"SMS report link successfully sent to {visit.phone}.")
+    except Exception as e:
+        messages.error(request, f"Failed to send SMS: {e}")
+        
+    return redirect('visit_detail', visit_id=visit.id)
+
+
 # ── Chamber Station Views ─────────────────────────────────────────
 
 @login_required
@@ -326,7 +339,18 @@ def lab_dashboard(request):
     # Queue is TestOrder records in SAMPLE_COLLECTED, TESTING, or RETEST_REQUIRED status
     lab_queue = TestOrder.objects.filter(
         status__in=[TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.TESTING, TestOrderStatus.RETEST_REQUIRED]
-    ).select_related('visit', 'test').order_by('created_at')
+    ).select_related('visit', 'test').order_by('visit__created_at', 'created_at')
+    
+    # Group test orders by visit so multiple tests for same patient appear together
+    grouped_queue = OrderedDict()
+    for order in lab_queue:
+        visit = order.visit
+        if visit.id not in grouped_queue:
+            grouped_queue[visit.id] = {
+                'visit': visit,
+                'orders': [],
+            }
+        grouped_queue[visit.id]['orders'].append(order)
     
     # Stats
     today = timezone.localdate()
@@ -336,7 +360,7 @@ def lab_dashboard(request):
     }
     
     context = {
-        'queue': lab_queue,
+        'grouped_queue': list(grouped_queue.values()),
         'stats': stats,
         **get_user_context(request)
     }
@@ -345,63 +369,99 @@ def lab_dashboard(request):
 
 @login_required
 def lab_enter_results(request, order_id):
+    """Legacy single-order URL — redirect to the visit-level page."""
     if not in_group(request.user, ['lab']):
         return HttpResponseForbidden("Access Denied.")
-        
     order = get_object_or_404(TestOrder, id=order_id)
-    
-    # Transition to testing status once opened in lab, if it was in sample_collected or retest_required
-    if order.status in (TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.RETEST_REQUIRED):
-        try:
-            transition_test_order_status(order, TestOrderStatus.TESTING, request.user, "Started result entry process in laboratory")
-        except TransitionError as e:
-            messages.error(request, f"Unable to update status: {e}")
-            
-    parameters = order.test.parameters
-    
+    return redirect('lab_enter_results_visit', visit_id=order.visit.id)
+
+
+@login_required
+def lab_enter_results_visit(request, visit_id):
+    """Enter results for ALL pending test orders of a visit on one page."""
+    if not in_group(request.user, ['lab']):
+        return HttpResponseForbidden("Access Denied.")
+
+    visit = get_object_or_404(Visit, id=visit_id)
+    eligible_statuses = [TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.TESTING, TestOrderStatus.RETEST_REQUIRED]
+    orders = visit.test_orders.filter(status__in=eligible_statuses).select_related('test').order_by('created_at')
+
+    if not orders.exists():
+        messages.info(request, f"No tests currently awaiting result entry for {visit.patient_name}.")
+        return redirect('lab_dashboard')
+
+    # Transition each eligible order to TESTING if it was in SAMPLE_COLLECTED or RETEST_REQUIRED
+    for order in orders:
+        if order.status in (TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.RETEST_REQUIRED):
+            try:
+                transition_test_order_status(order, TestOrderStatus.TESTING, request.user,
+                                             "Started result entry process in laboratory")
+            except TransitionError as e:
+                messages.error(request, f"Unable to update status for {order.test.name}: {e}")
+
+    # Re-fetch after transitions
+    orders = visit.test_orders.filter(status__in=eligible_statuses).select_related('test').order_by('created_at')
+
     if request.method == 'POST':
-        results = {}
-        for param in parameters:
-            param_name = param['name']
-            value = request.POST.get(f"param_{param_name}", "").strip()
-            results[param_name] = value
-            
-        try:
-            enter_test_result(order, results, request.user)
-            messages.success(request, f"Results entered for {order.test.name} (Visit: {order.visit.visit_id})")
+        submitted_order_ids = request.POST.getlist('order_ids')
+        all_success = True
+
+        for order in orders:
+            if str(order.id) not in submitted_order_ids:
+                continue
+
+            parameters = order.test.parameters
+            results = {}
+            for param in parameters:
+                param_name = param['name']
+                value = request.POST.get(f"order_{order.id}_param_{param_name}", "").strip()
+                results[param_name] = value
+
+            try:
+                enter_test_result(order, results, request.user)
+            except TransitionError as e:
+                messages.error(request, f"{order.test.name}: {e}")
+                all_success = False
+
+        if all_success:
+            messages.success(request, f"All results submitted for {visit.patient_name} ({visit.visit_id}).")
             return redirect('lab_dashboard')
-        except TransitionError as e:
-            messages.error(request, str(e))
-            
-    # For GET, load existing result values if available
-    existing_results = order.result_value or {}
-    
-    # Render form with parameter inputs
-    param_fields = []
-    for param in parameters:
-        name = param['name']
-        unit = param.get('unit', '')
-        ref_min = param.get('ref_min')
-        ref_max = param.get('ref_max')
-        
-        ref_range_str = ""
-        if ref_min is not None and ref_max is not None:
-            ref_range_str = f"{ref_min} - {ref_max}"
-        elif ref_min is not None:
-            ref_range_str = f"> {ref_min}"
-        elif ref_max is not None:
-            ref_range_str = f"< {ref_max}"
-            
-        param_fields.append({
-            'name': name,
-            'unit': unit,
-            'ref_range': ref_range_str,
-            'value': existing_results.get(name, '')
+
+    # Build per-order parameter field data for the template
+    orders_with_fields = []
+    for order in orders:
+        parameters = order.test.parameters
+        existing_results = order.result_value or {}
+        param_fields = []
+        for param in parameters:
+            name = param['name']
+            unit = param.get('unit', '')
+            ref_min = param.get('ref_min')
+            ref_max = param.get('ref_max')
+
+            ref_range_str = ""
+            if ref_min is not None and ref_max is not None:
+                ref_range_str = f"{ref_min} - {ref_max}"
+            elif ref_min is not None:
+                ref_range_str = f"> {ref_min}"
+            elif ref_max is not None:
+                ref_range_str = f"< {ref_max}"
+
+            param_fields.append({
+                'name': name,
+                'unit': unit,
+                'ref_range': ref_range_str,
+                'value': existing_results.get(name, '')
+            })
+
+        orders_with_fields.append({
+            'order': order,
+            'param_fields': param_fields,
         })
-        
+
     context = {
-        'order': order,
-        'param_fields': param_fields,
+        'visit': visit,
+        'orders_with_fields': orders_with_fields,
         **get_user_context(request)
     }
     return render(request, 'lab/enter_results.html', context)
@@ -417,7 +477,18 @@ def doctor_dashboard(request):
     # Queue is TestOrder records in RESULT_ENTERED status
     review_queue = TestOrder.objects.filter(
         status=TestOrderStatus.RESULT_ENTERED
-    ).select_related('visit', 'test').order_by('result_entered_at')
+    ).select_related('visit', 'test').order_by('visit__created_at', 'result_entered_at')
+    
+    # Group test orders by visit so multiple tests for same patient appear together
+    grouped_queue = OrderedDict()
+    for order in review_queue:
+        visit = order.visit
+        if visit.id not in grouped_queue:
+            grouped_queue[visit.id] = {
+                'visit': visit,
+                'orders': [],
+            }
+        grouped_queue[visit.id]['orders'].append(order)
     
     stats = {
         'pending': review_queue.count(),
@@ -428,7 +499,7 @@ def doctor_dashboard(request):
     }
     
     context = {
-        'queue': review_queue,
+        'grouped_queue': list(grouped_queue.values()),
         'stats': stats,
         **get_user_context(request)
     }
@@ -437,90 +508,121 @@ def doctor_dashboard(request):
 
 @login_required
 def doctor_review(request, order_id):
+    """Legacy single-order URL — redirect to the visit-level page."""
     if not in_group(request.user, ['chamber']):
         return HttpResponseForbidden("Access Denied.")
-        
     order = get_object_or_404(TestOrder, id=order_id)
-    parameters = order.test.parameters
-    results = order.result_value or {}
-    
+    return redirect('doctor_review_visit', visit_id=order.visit.id)
+
+
+@login_required
+def doctor_review_visit(request, visit_id):
+    """Review ALL pending test orders for a visit on one page."""
+    if not in_group(request.user, ['chamber']):
+        return HttpResponseForbidden("Access Denied.")
+
+    visit = get_object_or_404(Visit, id=visit_id)
+    orders = visit.test_orders.filter(
+        status=TestOrderStatus.RESULT_ENTERED
+    ).select_related('test').order_by('created_at')
+
+    if not orders.exists():
+        messages.info(request, f"No tests currently awaiting review for {visit.patient_name}.")
+        return redirect('doctor_dashboard')
+
     if request.method == 'POST':
-        action = request.POST.get('action')
+        # The form posts a per-order action: action_<order_id> = approve|edit|retest|recollect
         reason = request.POST.get('reason', '')
-        
-        try:
-            if action == 'approve':
-                # Transition: RESULT_ENTERED -> DOCTOR_REVIEWED -> REPORT_READY
-                transition_test_order_status(order, TestOrderStatus.DOCTOR_REVIEWED, request.user, "Approved results")
-                transition_test_order_status(order, TestOrderStatus.REPORT_READY, request.user, "Results marked report_ready")
-                messages.success(request, f"Test {order.test.name} results approved successfully.")
-                
-            elif action == 'edit':
-                # Perform edits
-                updated_results = {}
-                for param in parameters:
-                    name = param['name']
-                    updated_results[name] = request.POST.get(f"param_{name}", "").strip()
-                    
-                edit_test_result(order, updated_results, request.user, reason)
-                # Auto-approve after edit
-                transition_test_order_status(order, TestOrderStatus.DOCTOR_REVIEWED, request.user, f"Edited and Approved. Reason: {reason}")
-                transition_test_order_status(order, TestOrderStatus.REPORT_READY, request.user, "Results marked report_ready")
-                messages.success(request, f"Test results edited and approved.")
-                
-            elif action == 'retest':
-                transition_test_order_status(order, TestOrderStatus.RETEST_REQUIRED, request.user, f"Retest requested. Reason: {reason}")
-                messages.warning(request, f"Retest requested for {order.test.name}.")
-                
-            elif action == 'recollect':
-                transition_test_order_status(order, TestOrderStatus.RECOLLECTION_REQUIRED, request.user, f"Recollection requested. Reason: {reason}")
-                messages.warning(request, f"Recollection requested for {order.test.name}.")
-                
+        processed_any = False
+
+        for order in orders:
+            action = request.POST.get(f'action_{order.id}')
+            if not action:
+                continue
+
+            try:
+                if action == 'approve':
+                    transition_test_order_status(order, TestOrderStatus.DOCTOR_REVIEWED, request.user, "Approved results")
+                    transition_test_order_status(order, TestOrderStatus.REPORT_READY, request.user, "Results marked report_ready")
+                    messages.success(request, f"✅ {order.test.name} — approved.")
+                    processed_any = True
+
+                elif action == 'edit':
+                    updated_results = {}
+                    for param in order.test.parameters:
+                        name = param['name']
+                        updated_results[name] = request.POST.get(f"order_{order.id}_param_{name}", "").strip()
+                    edit_test_result(order, updated_results, request.user, reason)
+                    transition_test_order_status(order, TestOrderStatus.DOCTOR_REVIEWED, request.user, f"Edited and Approved. Reason: {reason}")
+                    transition_test_order_status(order, TestOrderStatus.REPORT_READY, request.user, "Results marked report_ready")
+                    messages.success(request, f"✏️ {order.test.name} — edited & approved.")
+                    processed_any = True
+
+                elif action == 'retest':
+                    transition_test_order_status(order, TestOrderStatus.RETEST_REQUIRED, request.user, f"Retest requested. Reason: {reason}")
+                    messages.warning(request, f"🔄 {order.test.name} — retest requested.")
+                    processed_any = True
+
+                elif action == 'recollect':
+                    transition_test_order_status(order, TestOrderStatus.RECOLLECTION_REQUIRED, request.user, f"Recollection requested. Reason: {reason}")
+                    messages.warning(request, f"🔄 {order.test.name} — recollection requested.")
+                    processed_any = True
+
+            except TransitionError as e:
+                messages.error(request, f"{order.test.name}: {e}")
+
+        if processed_any:
             return redirect('doctor_dashboard')
-            
-        except TransitionError as e:
-            messages.error(request, str(e))
-            
-    # Load parameter lines
-    param_fields = []
-    for param in parameters:
-        name = param['name']
-        unit = param.get('unit', '')
-        ref_min = param.get('ref_min')
-        ref_max = param.get('ref_max')
-        
-        ref_range_str = ""
-        if ref_min is not None and ref_max is not None:
-            ref_range_str = f"{ref_min} - {ref_max}"
-        elif ref_min is not None:
-            ref_range_str = f"> {ref_min}"
-        elif ref_max is not None:
-            ref_range_str = f"< {ref_max}"
-            
-        val = results.get(name, '')
-        
-        # Simple high/low check if numeric
-        abnormal = False
-        try:
-            f_val = float(val)
-            if ref_min is not None and f_val < float(ref_min):
-                abnormal = True
-            if ref_max is not None and f_val > float(ref_max):
-                abnormal = True
-        except ValueError:
-            pass
-            
-        param_fields.append({
-            'name': name,
-            'unit': unit,
-            'ref_range': ref_range_str,
-            'value': val,
-            'abnormal': abnormal
+
+    # Build per-order parameter field data for the template
+    orders_with_fields = []
+    for order in orders:
+        parameters = order.test.parameters
+        results = order.result_value or {}
+        param_fields = []
+        for param in parameters:
+            name = param['name']
+            unit = param.get('unit', '')
+            ref_min = param.get('ref_min')
+            ref_max = param.get('ref_max')
+
+            ref_range_str = ""
+            if ref_min is not None and ref_max is not None:
+                ref_range_str = f"{ref_min} - {ref_max}"
+            elif ref_min is not None:
+                ref_range_str = f"> {ref_min}"
+            elif ref_max is not None:
+                ref_range_str = f"< {ref_max}"
+
+            val = results.get(name, '')
+
+            # Simple high/low check if numeric
+            abnormal = False
+            try:
+                f_val = float(val)
+                if ref_min is not None and f_val < float(ref_min):
+                    abnormal = True
+                if ref_max is not None and f_val > float(ref_max):
+                    abnormal = True
+            except ValueError:
+                pass
+
+            param_fields.append({
+                'name': name,
+                'unit': unit,
+                'ref_range': ref_range_str,
+                'value': val,
+                'abnormal': abnormal,
+            })
+
+        orders_with_fields.append({
+            'order': order,
+            'param_fields': param_fields,
         })
-        
+
     context = {
-        'order': order,
-        'param_fields': param_fields,
+        'visit': visit,
+        'orders_with_fields': orders_with_fields,
         **get_user_context(request)
     }
     return render(request, 'doctor/review.html', context)
