@@ -24,8 +24,10 @@ class VisitStatus(models.TextChoices):
     SENT_TO_COLLECTION = 'sent_to_collection', 'Sent to Collection'
     SAMPLE_COLLECTED = 'sample_collected', 'Sample Drawn'
     DOCTOR_REVIEWED = 'doctor_reviewed', 'Doctor Reviewed'
+    PENDING_REPORTING = 'pending_reporting', 'Pending Reporting'
     REPORT_READY = 'report_ready', 'Report Ready'
     REPORT_DELIVERED = 'report_delivered', 'Report Delivered'
+    CANCELLED = 'cancelled', 'Cancelled'
 
 
 class TestOrderStatus(models.TextChoices):
@@ -37,6 +39,7 @@ class TestOrderStatus(models.TextChoices):
     RETEST_REQUIRED = 'retest_required', 'Retest Required'
     RECOLLECTION_REQUIRED = 'recollection_required', 'Recollection Required'
     REPORT_READY = 'report_ready', 'Report Ready'
+    CANCELLED = 'cancelled', 'Cancelled'
 
 
 class PaymentMethod(models.TextChoices):
@@ -199,11 +202,11 @@ class Visit(models.Model):
 
     @property
     def all_tests_ready(self):
-        """True if every test order on this visit has status report_ready."""
-        orders = self.test_orders.all()
-        if not orders.exists():
+        """True if every active (non-cancelled) test order on this visit has status report_ready."""
+        active_orders = self.test_orders.exclude(status=TestOrderStatus.CANCELLED)
+        if not active_orders.exists():
             return False
-        return all(o.status == TestOrderStatus.REPORT_READY for o in orders)
+        return all(o.status == TestOrderStatus.REPORT_READY for o in active_orders)
 
 
 # ── Test Order ─────────────────────────────────────────────────────
@@ -250,6 +253,11 @@ class TestOrder(models.Model):
         related_name='tests_reviewed'
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    display_order = models.IntegerField(
+        null=True, blank=True,
+        help_text='Custom display order of the test order'
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

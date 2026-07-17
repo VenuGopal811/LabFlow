@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Reporting Detail — {{ visit.visit_id }}{% endblock %}
+{% block page_title %}Organize Report: {{ visit.visit_id }}{% endblock %}
+{% block breadcrumb %}Reporting / Detail{% endblock %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    <!-- Left Column: Draggable Card Reordering List -->
+    <div>
+        <div class="card mb-3">
+            <div class="card-header flex-between">
+                <h3>Drag & Reorder Test Results</h3>
+                <span class="badge badge-pending_reporting">Pending Reporting</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted text-sm mb-3">
+                    Drag the cards below to reorganize the order in which test sections will appear in the generated PDF report.
+                </p>
+                
+                <form id="reorder-form" method="post" action="{% url 'reporting_detail' visit.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" id="form-action" value="save_order">
+                    
+                    <div id="draggable-list" class="draggable-list">
+                        {% for order in test_orders %}
+                            <div class="draggable-card" draggable="true" data-id="{{ order.id }}">
+                                <input type="hidden" name="order_ids" value="{{ order.id }}">
+                                <div class="card-drag-handle">☰</div>
+                                <div class="card-content">
+                                    <div class="test-name">{{ order.test.name }}</div>
+                                    <div class="test-code">{{ order.test.short_code }}</div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="btn-group" style="margin-top: 24px;">
+                        <button type="submit" onclick="setAction('save_order')" class="btn btn-outline">💾 Save Layout</button>
+                        <button type="submit" onclick="setAction('finalize')" class="btn btn-success">📋 Finalize Report & Send SMS</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right Column: Patient Information & Actions -->
+    <div>
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3>Patient Demographics</h3>
+            </div>
+            <div class="card-body">
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div>
+                        <p class="text-muted text-sm">PATIENT NAME</p>
+                        <p class="font-bold">{{ visit.patient_name }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">AGE & GENDER</p>
+                        <p class="font-bold">{{ visit.age }} / {{ visit.get_gender_display }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">MOBILE NUMBER</p>
+                        <p class="font-bold">{{ visit.phone }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">REFERRED BY</p>
+                        <p class="font-bold">{{ visit.referred_by|default:"Self" }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm">DATE REGISTERED</p>
+                        <p class="font-bold">{{ visit.created_at|date:"d M Y, h:i A" }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <a href="{% url 'reporting_dashboard' %}" class="btn btn-outline btn-block">← Back to Queue</a>
+    </div>
+</div>
+
+<script>
+function setAction(action) {
+    document.getElementById('form-action').value = action;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const list = document.getElementById('draggable-list');
+    let dragEl = null;
+
+    list.addEventListener('dragstart', function(e) {
+        const card = e.target.closest('.draggable-card');
+        if (card) {
+            dragEl = card;
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+    });
+
+    list.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const target = e.target.closest('.draggable-card');
+        if (target && target !== dragEl) {
+            const rect = target.getBoundingClientRect();
+            const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+            list.insertBefore(dragEl, next ? target.nextSibling : target);
+        }
+    });
+
+    list.addEventListener('dragend', function(e) {
+        const card = e.target.closest('.draggable-card');
+        if (card) {
+            card.classList.remove('dragging');
+        }
+    });
+});
+</script>
+{% endblock %}

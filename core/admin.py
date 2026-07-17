@@ -82,6 +82,7 @@ STATUS_COLORS = {
     'approved_by_chamber': '#0d6efd',  # Blue
     'sent_to_collection': '#6f42c1',   # Purple
     'doctor_reviewed': '#0dcaf0',      # Cyan
+    'pending_reporting': '#6f42c1',    # Purple
     'report_ready': '#198754',         # Green
     'report_delivered': '#198754',     # Green
     # Test order statuses
@@ -91,6 +92,7 @@ STATUS_COLORS = {
     'result_entered': '#0dcaf0',
     'retest_required': '#dc3545',
     'recollection_required': '#dc3545',
+    'cancelled': '#78909c',
 }
 
 
@@ -153,12 +155,16 @@ class VisitAdmin(admin.ModelAdmin):
 
     @admin.display(description='Tests')
     def test_summary(self, obj):
-        orders = obj.test_orders.all()
+        orders = obj.test_orders.exclude(status=TestOrderStatus.CANCELLED)
         if not orders:
             return '—'
         total = orders.count()
         ready = sum(1 for o in orders if o.status == TestOrderStatus.REPORT_READY)
-        return f'{ready}/{total} ready'
+        cancelled = obj.test_orders.filter(status=TestOrderStatus.CANCELLED).count()
+        summary = f'{ready}/{total} ready'
+        if cancelled:
+            summary += f' ({cancelled} cancelled)'
+        return summary
 
     @admin.display(description='Created', ordering='created_at')
     def created_at_short(self, obj):
@@ -198,6 +204,9 @@ class VisitAdmin(admin.ModelAdmin):
     @admin.action(description='📱 Send SMS Notification')
     def action_send_sms(self, request, queryset):
         for visit in queryset:
+            if visit.status not in (VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
+                messages.error(request, f'SMS failed for {visit.visit_id}: Visit status must be Report Ready or Report Delivered.')
+                continue
             try:
                 trigger_report_sms(visit, request.user)
                 messages.success(request, f'SMS sent for {visit.visit_id}')

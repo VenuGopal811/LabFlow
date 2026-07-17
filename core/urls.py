@@ -15,6 +15,7 @@ urlpatterns = [
     path('visit/<int:visit_id>/bill/', views.print_bill, name='print_bill'),
     path('visit/<int:visit_id>/pay-pending/', views.transition_to_payment_pending, name='transition_to_payment_pending'),
     path('visit/<int:visit_id>/send-sms/', views.send_report_sms, name='send_report_sms'),
+    path('test-order/cancel/', views.cancel_test_order, name='cancel_test_order'),
 
     # Chamber (Approvals / Billing)
     path('chamber/', views.chamber_dashboard, name='chamber_dashboard'),
@@ -34,4 +35,8 @@ urlpatterns = [
     path('doctor/', views.doctor_dashboard, name='doctor_dashboard'),
     path('doctor/review/<int:order_id>/', views.doctor_review, name='doctor_review'),
     path('doctor/visit/<int:visit_id>/review/', views.doctor_review_visit, name='doctor_review_visit'),
+
+    # Reporting
+    path('reporting/', views.reporting_dashboard, name='reporting_dashboard'),
+    path('reporting/detail/<int:visit_id>/', views.reporting_detail, name='reporting_detail'),
 ]

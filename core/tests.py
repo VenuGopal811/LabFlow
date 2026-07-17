@@ -26,6 +26,18 @@ class BaseTestCase(TestCase):
         self.lab_tech = User.objects.create_user('labtech', password='test')
         self.doctor = User.objects.create_user('doctor', password='test')
 
+        from django.contrib.auth.models import Group
+        reception_group, _ = Group.objects.get_or_create(name='reception')
+        lab_group, _ = Group.objects.get_or_create(name='lab')
+        chamber_group, _ = Group.objects.get_or_create(name='chamber')
+        collection_group, _ = Group.objects.get_or_create(name='collection')
+
+        self.receptionist.groups.add(reception_group)
+        self.chamber.groups.add(chamber_group)
+        self.collector.groups.add(collection_group)
+        self.lab_tech.groups.add(lab_group)
+        self.doctor.groups.add(chamber_group)
+
         self.cbc = TestCatalog.objects.create(
             name='Complete Blood Count',
             short_code='CBC',
@@ -312,6 +324,13 @@ class SampleCollectionTransitionTest(BaseTestCase):
         check_visit_completion(visit, self.doctor)
         
         visit.refresh_from_db()
+        self.assertEqual(visit.status, VisitStatus.PENDING_REPORTING)
+
+        # Finalize report
+        from .services import finalize_visit_report
+        finalize_visit_report(visit, self.doctor)
+        
+        visit.refresh_from_db()
         self.assertEqual(visit.status, VisitStatus.REPORT_DELIVERED)
         
         # Now trigger recollection on CBC
@@ -373,18 +392,264 @@ class SendSMSViewTest(BaseTestCase):
         from django.urls import reverse
         visit = self._create_visit()
         
-        # Complete all test orders to make it REPORT_READY
+        # Progress visit to SAMPLE_COLLECTED so check_visit_completion can promote it
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+        collect_sample(visit, SampleType.BLOOD, 'C-12345', self.collector)
+        
+        # Complete all test orders
         for order in visit.test_orders.all():
             order.status = TestOrderStatus.REPORT_READY
             order.save()
         check_visit_completion(visit, self.doctor)
         
-        # Log in and post to send-sms URL
+        # 1. Verify manual sending SMS in PENDING_REPORTING fails / is gated
         self.client.force_login(self.receptionist)
         url = reverse('send_report_sms', kwargs={'visit_id': visit.id})
         response = self.client.post(url)
-        
         self.assertEqual(response.status_code, 302)
-        # Verify it logs the dispatch
+        visit.refresh_from_db()
+        self.assertFalse(visit.audit_logs.filter(action='sms_sent').exists())
+
+        # 2. Finalize report (this transitions to REPORT_READY and auto-triggers SMS)
+        from .services import finalize_visit_report
+        finalize_visit_report(visit, self.doctor)
+        
+        # 3. Manually send SMS again (now allowed because status is REPORT_READY or REPORT_DELIVERED)
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 302)
         self.assertTrue(visit.audit_logs.filter(action='sms_sent').exists())
 
+
+class ReportingPipelineTest(BaseTestCase):
+    """Test cases for the new Reporting pipeline stage."""
+
+    def test_visit_autopromotes_to_pending_reporting(self):
+        visit = self._create_visit()
+        # Complete all test orders
+        for order in visit.test_orders.all():
+            order.status = TestOrderStatus.REPORT_READY
+            order.save()
+        
+        # Advance visit status to SAMPLE_COLLECTED to make it eligible
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+        collect_sample(visit, SampleType.BLOOD, 'C-12345', self.collector)
+        
+        # Run completion check manually
+        check_visit_completion(visit, self.doctor)
+        
+        visit.refresh_from_db()
+        # check_visit_completion should have promoted it to PENDING_REPORTING
+        self.assertEqual(visit.status, VisitStatus.PENDING_REPORTING)
+
+    def test_reporting_dashboard_access_and_reorder(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        for order in visit.test_orders.all():
+            order.status = TestOrderStatus.REPORT_READY
+            order.save()
+        
+        visit.status = VisitStatus.PENDING_REPORTING
+        visit.save()
+
+        # Login as receptionist
+        self.client.force_login(self.receptionist)
+        
+        dashboard_url = reverse('reporting_dashboard')
+        response = self.client.get(dashboard_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, visit.visit_id)
+
+        # Post to reorder test orders
+        orders = list(visit.test_orders.all())
+        order_ids = [str(orders[1].id), str(orders[0].id)]
+        
+        detail_url = reverse('reporting_detail', kwargs={'visit_id': visit.id})
+        response = self.client.post(detail_url, {'action': 'save_order', 'order_ids': order_ids})
+        self.assertEqual(response.status_code, 302)
+
+        # Verify display_order updated
+        orders[0].refresh_from_db()
+        orders[1].refresh_from_db()
+        self.assertEqual(orders[1].display_order, 0)
+        self.assertEqual(orders[0].display_order, 1)
+
+    def test_reporting_finalize_transitions_and_sends_sms(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        for order in visit.test_orders.all():
+            order.status = TestOrderStatus.REPORT_READY
+            order.save()
+        
+        visit.status = VisitStatus.PENDING_REPORTING
+        visit.save()
+
+        self.client.force_login(self.receptionist)
+        detail_url = reverse('reporting_detail', kwargs={'visit_id': visit.id})
+        
+        orders = list(visit.test_orders.all())
+        order_ids = [str(orders[1].id), str(orders[0].id)]
+        
+        response = self.client.post(detail_url, {'action': 'finalize', 'order_ids': order_ids})
+        self.assertEqual(response.status_code, 302)
+
+        visit.refresh_from_db()
+        # Finalizing transitions to REPORT_READY, then SMS sends and shifts to REPORT_DELIVERED
+        self.assertEqual(visit.status, VisitStatus.REPORT_DELIVERED)
+        self.assertTrue(visit.audit_logs.filter(action='sms_sent').exists())
+
+    def test_retest_reverts_visit_to_sample_collected(self):
+        visit = self._create_visit()
+        visit.status = VisitStatus.PENDING_REPORTING
+        visit.save()
+
+        order = visit.test_orders.first()
+        order.status = TestOrderStatus.RESULT_ENTERED
+        order.save()
+
+        # Doctor requests a retest
+        transition_test_order_status(order, TestOrderStatus.RETEST_REQUIRED, self.doctor)
+        
+        visit.refresh_from_db()
+        # Should drop back to SAMPLE_COLLECTED
+        self.assertEqual(visit.status, VisitStatus.SAMPLE_COLLECTED)
+
+
+class CancelTestOrderTest(BaseTestCase):
+    """Test cases for the TestOrder cancellation feature."""
+
+    def _advance_visit_to_sample_collected(self, visit):
+        """Helper to walk a visit through to SAMPLE_COLLECTED."""
+        transition_visit_status(visit, VisitStatus.PAYMENT_PENDING, self.receptionist)
+        confirm_payment(visit, self.chamber, method='cash', amount=Decimal('850.00'))
+        transition_visit_status(visit, VisitStatus.APPROVED_BY_CHAMBER, self.chamber)
+        transition_visit_status(visit, VisitStatus.SENT_TO_COLLECTION, self.chamber)
+        collect_sample(visit, SampleType.BLOOD, 'C-99999', self.collector)
+
+    def test_cancel_succeeds_with_correct_password(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+
+        self.client.force_login(self.doctor)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': order.id,
+            'password': 'test',
+            'reason': 'Patient opted out of this test.',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, TestOrderStatus.CANCELLED)
+
+        # Verify audit log records old status and reason
+        log = AuditLog.objects.filter(
+            test_order=order, action='test_order_status_changed', new_value='cancelled'
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertIn('Reason: Patient opted out', log.details)
+        self.assertIn('Pending', log.details)
+
+    def test_cancel_rejected_with_wrong_password(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+
+        self.client.force_login(self.doctor)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': order.id,
+            'password': 'wrongpassword',
+            'reason': 'Some reason',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, TestOrderStatus.PENDING)
+
+    def test_cancel_forbidden_for_non_chamber_user(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+
+        self.client.force_login(self.lab_tech)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': order.id,
+            'password': 'test',
+            'reason': 'Some reason',
+        })
+        self.assertEqual(response.status_code, 403)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, TestOrderStatus.PENDING)
+
+    def test_cancel_report_ready_order_rejected(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+        order.status = TestOrderStatus.REPORT_READY
+        order.save()
+
+        self.client.force_login(self.doctor)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': order.id,
+            'password': 'test',
+            'reason': 'Trying to cancel a reported test',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, TestOrderStatus.REPORT_READY)
+
+    def test_cancel_advances_visit_when_remaining_orders_ready(self):
+        """Cancelling the last blocking order should auto-promote the visit."""
+        from django.urls import reverse
+        visit = self._create_visit()
+        self._advance_visit_to_sample_collected(visit)
+
+        orders = list(visit.test_orders.all())
+        # Mark first order as REPORT_READY (complete)
+        orders[0].status = TestOrderStatus.REPORT_READY
+        orders[0].save()
+
+        # Cancel the second order — now all active orders are REPORT_READY
+        self.client.force_login(self.doctor)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': orders[1].id,
+            'password': 'test',
+            'reason': 'Not needed anymore',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        orders[1].refresh_from_db()
+        self.assertEqual(orders[1].status, TestOrderStatus.CANCELLED)
+
+        visit.refresh_from_db()
+        # Visit should have auto-promoted to PENDING_REPORTING
+        self.assertEqual(visit.status, VisitStatus.PENDING_REPORTING)
+
+    def test_cancel_requires_reason(self):
+        from django.urls import reverse
+        visit = self._create_visit()
+        order = visit.test_orders.first()
+
+        self.client.force_login(self.doctor)
+        url = reverse('cancel_test_order')
+        response = self.client.post(url, {
+            'order_id': order.id,
+            'password': 'test',
+            'reason': '',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, TestOrderStatus.PENDING)

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Reporting Dashboard — LabFlow{% endblock %}
+{% block page_title %}Reporting Queue{% endblock %}
+{% block breadcrumb %}Reporting / Home{% endblock %}
+
+{% block content %}
+<!-- stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon purple">📊</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.pending }}</div>
+            <div class="stat-label">Pending Reporting</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-value">{{ stats.finalized_today }}</div>
+            <div class="stat-label">Finalized Reports Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Reporting Queue Table -->
+<div class="card">
+    <div class="card-header">
+        <h3>Visits Awaiting Reporting</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Visit ID</th>
+                    <th>Patient Name</th>
+                    <th>Age/Gender</th>
+                    <th>Tests Approved</th>
+                    <th>Date Registered</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for visit in queue %}
+                <tr>
+                    <td><strong>{{ visit.visit_id }}</strong></td>
+                    <td>{{ visit.patient_name }}</td>
+                    <td>{{ visit.age }} / {{ visit.get_gender_display }}</td>
+                    <td>
+                        {% for order in visit.test_orders.all %}
+                            <span class="badge badge-report_ready">{{ order.test.short_code|default:order.test.name }}</span>{% if not forloop.last %} {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>{{ visit.created_at|date:"d M Y, h:i A" }}</td>
+                    <td>
+                        <a href="{% url 'reporting_detail' visit.id %}" class="btn btn-primary btn-sm">📊 Organize & Finalize</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="table-empty">
+                        No patients currently in the reporting queue.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

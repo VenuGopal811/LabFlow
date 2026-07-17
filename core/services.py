@@ -21,30 +21,34 @@ class TransitionError(Exception):
 # ── Allowed transitions ───────────────────────────────────────────
 
 VISIT_TRANSITIONS = {
-    VisitStatus.REGISTERED: [VisitStatus.PAYMENT_PENDING],
-    VisitStatus.PAYMENT_PENDING: [VisitStatus.PAYMENT_CONFIRMED],
-    VisitStatus.PAYMENT_CONFIRMED: [VisitStatus.APPROVED_BY_CHAMBER],
-    VisitStatus.APPROVED_BY_CHAMBER: [VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.SENT_TO_COLLECTION: [VisitStatus.SAMPLE_COLLECTED],
-    VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED, VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.DOCTOR_REVIEWED: [VisitStatus.REPORT_READY, VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED, VisitStatus.SENT_TO_COLLECTION],
-    VisitStatus.REPORT_DELIVERED: [VisitStatus.SENT_TO_COLLECTION],
+    VisitStatus.REGISTERED: [VisitStatus.PAYMENT_PENDING, VisitStatus.CANCELLED],
+    VisitStatus.PAYMENT_PENDING: [VisitStatus.PAYMENT_CONFIRMED, VisitStatus.CANCELLED],
+    VisitStatus.PAYMENT_CONFIRMED: [VisitStatus.APPROVED_BY_CHAMBER, VisitStatus.CANCELLED],
+    VisitStatus.APPROVED_BY_CHAMBER: [VisitStatus.SENT_TO_COLLECTION, VisitStatus.CANCELLED],
+    VisitStatus.SENT_TO_COLLECTION: [VisitStatus.SAMPLE_COLLECTED, VisitStatus.CANCELLED],
+    VisitStatus.SAMPLE_COLLECTED: [VisitStatus.DOCTOR_REVIEWED, VisitStatus.SENT_TO_COLLECTION, VisitStatus.CANCELLED],
+    VisitStatus.DOCTOR_REVIEWED: [VisitStatus.PENDING_REPORTING, VisitStatus.SENT_TO_COLLECTION, VisitStatus.CANCELLED],
+    VisitStatus.PENDING_REPORTING: [VisitStatus.REPORT_READY, VisitStatus.SENT_TO_COLLECTION, VisitStatus.SAMPLE_COLLECTED, VisitStatus.CANCELLED],
+    VisitStatus.REPORT_READY: [VisitStatus.REPORT_DELIVERED, VisitStatus.SENT_TO_COLLECTION, VisitStatus.SAMPLE_COLLECTED, VisitStatus.CANCELLED],
+    VisitStatus.REPORT_DELIVERED: [VisitStatus.SENT_TO_COLLECTION, VisitStatus.SAMPLE_COLLECTED, VisitStatus.CANCELLED],
+    VisitStatus.CANCELLED: [],
 }
 
 TEST_ORDER_TRANSITIONS = {
-    TestOrderStatus.PENDING: [TestOrderStatus.SAMPLE_COLLECTED],
-    TestOrderStatus.SAMPLE_COLLECTED: [TestOrderStatus.TESTING],
-    TestOrderStatus.TESTING: [TestOrderStatus.RESULT_ENTERED],
+    TestOrderStatus.PENDING: [TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.CANCELLED],
+    TestOrderStatus.SAMPLE_COLLECTED: [TestOrderStatus.TESTING, TestOrderStatus.CANCELLED],
+    TestOrderStatus.TESTING: [TestOrderStatus.RESULT_ENTERED, TestOrderStatus.CANCELLED],
     TestOrderStatus.RESULT_ENTERED: [
         TestOrderStatus.DOCTOR_REVIEWED,
         TestOrderStatus.RETEST_REQUIRED,
         TestOrderStatus.RECOLLECTION_REQUIRED,
+        TestOrderStatus.CANCELLED,
     ],
-    TestOrderStatus.DOCTOR_REVIEWED: [TestOrderStatus.REPORT_READY],
-    TestOrderStatus.RETEST_REQUIRED: [TestOrderStatus.TESTING],
-    TestOrderStatus.RECOLLECTION_REQUIRED: [TestOrderStatus.SAMPLE_COLLECTED],
+    TestOrderStatus.DOCTOR_REVIEWED: [TestOrderStatus.REPORT_READY, TestOrderStatus.CANCELLED],
+    TestOrderStatus.RETEST_REQUIRED: [TestOrderStatus.TESTING, TestOrderStatus.CANCELLED],
+    TestOrderStatus.RECOLLECTION_REQUIRED: [TestOrderStatus.SAMPLE_COLLECTED, TestOrderStatus.CANCELLED],
     TestOrderStatus.REPORT_READY: [],  # Terminal state
+    TestOrderStatus.CANCELLED: [],  # Terminal state
 }
 
 
@@ -117,12 +121,22 @@ def transition_test_order_status(test_order, new_status, actor, details=''):
     # Revert visit status back to SENT_TO_COLLECTION if recollection is requested
     if new_status == TestOrderStatus.RECOLLECTION_REQUIRED:
         if test_order.visit.status in (VisitStatus.SAMPLE_COLLECTED, VisitStatus.DOCTOR_REVIEWED,
-                                       VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
+                                       VisitStatus.PENDING_REPORTING, VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
             transition_visit_status(
                 test_order.visit,
                 VisitStatus.SENT_TO_COLLECTION,
                 actor,
                 details=f"Recollection requested for {test_order.test.name} - moving visit back to collection queue"
+            )
+
+    # Revert visit status back to SAMPLE_COLLECTED if retest is requested
+    if new_status == TestOrderStatus.RETEST_REQUIRED:
+        if test_order.visit.status in (VisitStatus.PENDING_REPORTING, VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
+            transition_visit_status(
+                test_order.visit,
+                VisitStatus.SAMPLE_COLLECTED,
+                actor,
+                details=f"Retest requested for {test_order.test.name} - moving visit back to Sample Collected"
             )
 
     AuditLog.objects.create(
@@ -136,7 +150,7 @@ def transition_test_order_status(test_order, new_status, actor, details=''):
     )
 
     # Check if this transition completes the visit
-    if new_status == TestOrderStatus.REPORT_READY:
+    if new_status in (TestOrderStatus.REPORT_READY, TestOrderStatus.CANCELLED):
         check_visit_completion(test_order.visit, actor)
 
     return test_order
@@ -237,9 +251,15 @@ def edit_test_result(test_order, new_value, actor, reason=''):
 
 def check_visit_completion(visit, actor):
     """
-    Auto-promote visit to report_ready when ALL test orders are report_ready.
-    Then generate a download token and trigger SMS.
+    Auto-promote visit to pending_reporting when ALL test orders are report_ready.
+    Or if all test orders are cancelled, transition visit to CANCELLED.
     """
+    active_orders = visit.test_orders.exclude(status=TestOrderStatus.CANCELLED)
+    if not active_orders.exists():
+        if visit.status != VisitStatus.CANCELLED:
+            transition_visit_status(visit, VisitStatus.CANCELLED, actor, 'All tests cancelled (auto-cancelled).')
+        return True
+
     if not visit.all_tests_ready:
         return False
 
@@ -251,15 +271,23 @@ def check_visit_completion(visit, actor):
                                     'All samples collected (auto-promoted).')
         transition_visit_status(visit, VisitStatus.DOCTOR_REVIEWED, actor,
                                 'All tests reviewed by doctor.')
-        transition_visit_status(visit, VisitStatus.REPORT_READY, actor,
-                                'All test orders are report_ready.')
-
-        # Generate download token and send SMS
-        visit.generate_report_token()
-        trigger_report_sms(visit, actor)
+        transition_visit_status(visit, VisitStatus.PENDING_REPORTING, actor,
+                                'All test orders are approved.')
         return True
 
     return False
+
+
+def finalize_visit_report(visit, actor):
+    """
+    Transition a visit from PENDING_REPORTING to REPORT_READY.
+    Generates download token and triggers SMS.
+    """
+    transition_visit_status(visit, VisitStatus.REPORT_READY, actor,
+                            'Report finalized by reporting user.')
+    visit.generate_report_token()
+    trigger_report_sms(visit, actor)
+    return visit
 
 
 # ── Payment ────────────────────────────────────────────────────────

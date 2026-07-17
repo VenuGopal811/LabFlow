@@ -84,11 +84,14 @@
                             <th>Department</th>
                             <th>Price</th>
                             <th>Status</th>
+                            {% if 'chamber' in user_groups or user.is_superuser %}
+                            <th>Actions</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for order in test_orders %}
-                        <tr>
+                        <tr{% if order.status == 'cancelled' %} class="row-cancelled"{% endif %}>
                             <td>
                                 <strong>{{ order.test.name }}</strong>
                                 {% if order.test.short_code %} ({{ order.test.short_code }}){% endif %}
@@ -99,6 +102,15 @@
                             <td>
                                 <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
                             </td>
+                            {% if 'chamber' in user_groups or user.is_superuser %}
+                            <td>
+                                {% if order.status != 'report_ready' and order.status != 'cancelled' %}
+                                <button type="button" class="btn btn-sm btn-danger" onclick="openCancelModal('{{ order.id }}', '{{ order.test.name|escapejs }}')">🚫 Cancel</button>
+                                {% else %}
+                                <span class="text-muted text-sm">—</span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -178,4 +190,53 @@
         </div>
     </div>
 </div>
+
+<!-- Cancel Test Order Modal -->
+{% if 'chamber' in user_groups or user.is_superuser %}
+<div class="modal-overlay" id="cancelModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>🚫 Cancel Test Order</h3>
+            <button type="button" class="modal-close" onclick="closeCancelModal()">&times;</button>
+        </div>
+        <form method="POST" action="{% url 'cancel_test_order' %}">
+            {% csrf_token %}
+            <input type="hidden" name="order_id" id="cancelOrderId">
+            <div class="modal-body">
+                <p>You are about to cancel: <strong id="cancelTestName"></strong></p>
+                <p class="text-muted text-sm">This action is irreversible. Please provide a reason and re-enter your password to confirm.</p>
+                <div class="form-group">
+                    <label for="cancelReason">Reason for cancellation <span class="text-danger">*</span></label>
+                    <textarea name="reason" id="cancelReason" class="form-control" rows="3" required placeholder="Enter the reason for cancelling this test..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="cancelPassword">Your password <span class="text-danger">*</span></label>
+                    <input type="password" name="password" id="cancelPassword" class="form-control" required placeholder="Re-enter your account password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeCancelModal()">Go Back</button>
+                <button type="submit" class="btn btn-danger">Confirm Cancellation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openCancelModal(orderId, testName) {
+    document.getElementById('cancelOrderId').value = orderId;
+    document.getElementById('cancelTestName').textContent = testName;
+    document.getElementById('cancelReason').value = '';
+    document.getElementById('cancelPassword').value = '';
+    document.getElementById('cancelModal').classList.add('active');
+}
+function closeCancelModal() {
+    document.getElementById('cancelModal').classList.remove('active');
+}
+// Close modal when clicking outside
+document.getElementById('cancelModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCancelModal();
+});
+</script>
+{% endif %}
 {% endblock %}

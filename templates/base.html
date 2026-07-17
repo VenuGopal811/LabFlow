@@ -61,6 +61,15 @@
                     <span>Test Queue</span>
                 </a>
                 {% endif %}
+
+                <!-- Reporting Section Navigation -->
+                {% if request.user.is_superuser or 'reception' in user_groups or 'lab' in user_groups or 'chamber' in user_groups %}
+                <div class="nav-section-title">Reporting</div>
+                <a href="{% url 'reporting_dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'reporting_dashboard' or request.resolver_match.url_name == 'reporting_detail' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span>Reporting Queue</span>
+                </a>
+                {% endif %}
             </nav>
             
             <div class="sidebar-footer">

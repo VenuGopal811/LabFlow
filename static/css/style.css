@@ -441,6 +441,7 @@ table tbody tr.group-first > td.group-cell {
 .badge-approved_by_chamber { background: var(--status-blue); }
 .badge-sent_to_collection  { background: var(--status-purple); }
 .badge-doctor_reviewed     { background: var(--status-cyan); color: var(--gray-900); }
+.badge-pending_reporting   { background: var(--status-purple); }
 .badge-report_ready        { background: var(--status-green); }
 .badge-report_delivered    { background: var(--status-green); }
 
@@ -450,6 +451,72 @@ table tbody tr.group-first > td.group-cell {
 .badge-result_entered       { background: var(--status-cyan); color: var(--gray-900); }
 .badge-retest_required      { background: var(--status-red); }
 .badge-recollection_required { background: var(--status-red); }
+.badge-cancelled            { background: #78909c; }
+
+/* ── Draggable Reporting Cards ────────────────────────────────────── */
+.draggable-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.draggable-card {
+    background: var(--white);
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: grab;
+    user-select: none;
+    transition: box-shadow 0.2s, border-color 0.2s, background-color 0.2s;
+    box-shadow: var(--shadow-sm);
+}
+
+.draggable-card:active {
+    cursor: grabbing;
+}
+
+.draggable-card.dragging {
+    opacity: 0.5;
+    background: var(--gray-50);
+    border-style: dashed;
+    box-shadow: none;
+}
+
+.card-drag-handle {
+    font-size: 20px;
+    color: var(--gray-400);
+    cursor: grab;
+}
+
+.draggable-card.dragging .card-drag-handle {
+    cursor: grabbing;
+}
+
+.draggable-card .card-content {
+    flex-grow: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.draggable-card .test-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gray-900);
+}
+
+.draggable-card .test-code {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--primary-600);
+    background: var(--primary-50);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+}
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
 .btn {
@@ -980,4 +1047,131 @@ textarea.form-control {
     .form-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* ── Cancelled Row Styling ────────────────────────────────────────── */
+.row-cancelled td {
+    opacity: 0.5;
+    text-decoration: line-through;
+}
+.row-cancelled td:last-child {
+    text-decoration: none;
+}
+
+/* ── Danger Button ────────────────────────────────────────────────── */
+.btn-danger {
+    background: var(--status-red);
+    color: var(--white);
+    border: 1px solid var(--status-red);
+}
+.btn-danger:hover {
+    background: #c62828;
+    border-color: #c62828;
+}
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+/* ── Modal Overlay ────────────────────────────────────────────────── */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+.modal-overlay.active {
+    display: flex;
+    animation: modalFadeIn 0.2s ease-out;
+}
+.modal-card {
+    background: var(--white);
+    border-radius: var(--radius-lg, 12px);
+    width: 480px;
+    max-width: 90vw;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalSlideIn 0.25s ease-out;
+    overflow: hidden;
+}
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--gray-200);
+}
+.modal-header h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gray-900);
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--gray-500);
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+}
+.modal-close:hover {
+    color: var(--gray-900);
+}
+.modal-body {
+    padding: 20px 24px;
+}
+.modal-body .form-group {
+    margin-bottom: 16px;
+}
+.modal-body .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 6px;
+}
+.modal-body .form-group .form-control {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-sm, 6px);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.15s;
+}
+.modal-body .form-group .form-control:focus {
+    outline: none;
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.12);
+}
+.modal-body .form-group textarea.form-control {
+    resize: vertical;
+    min-height: 70px;
+}
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--gray-200);
+}
+.text-danger {
+    color: var(--status-red);
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes modalSlideIn {
+    from { opacity: 0; transform: translateY(-20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }

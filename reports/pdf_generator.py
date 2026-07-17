@@ -108,7 +108,9 @@ def generate_report_pdf(visit):
 
     test_orders = visit.test_orders.select_related('test').filter(
         status__in=['doctor_reviewed', 'report_ready']
-    )
+    ).exclude(
+        status='cancelled'
+    ).order_by('display_order', 'created_at')
 
     for order in test_orders:
         # Test name header

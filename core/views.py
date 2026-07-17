@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.utils import timezone
 from django.http import HttpResponseForbidden, Http404
+from django.contrib.auth import authenticate
 
 from .models import (
     Visit, VisitStatus, TestOrder, TestOrderStatus,
@@ -14,7 +15,7 @@ from .services import (
     transition_visit_status, transition_test_order_status,
     confirm_payment, collect_sample, enter_test_result,
     edit_test_result, trigger_report_sms, check_visit_completion,
-    TransitionError
+    finalize_visit_report, TransitionError
 )
 
 
@@ -169,6 +170,9 @@ def transition_to_payment_pending(request, visit_id):
 @login_required
 def send_report_sms(request, visit_id):
     visit = get_object_or_404(Visit, id=visit_id)
+    if visit.status not in (VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED):
+        messages.error(request, "SMS can only be sent when the report is ready or delivered.")
+        return redirect('visit_detail', visit_id=visit.id)
     try:
         trigger_report_sms(visit, request.user)
         messages.success(request, f"SMS report link successfully sent to {visit.phone}.")
@@ -626,3 +630,124 @@ def doctor_review_visit(request, visit_id):
         **get_user_context(request)
     }
     return render(request, 'doctor/review.html', context)
+
+
+# ── Reporting Station Views ───────────────────────────────────────
+
+@login_required
+def reporting_dashboard(request):
+    if not in_group(request.user, ['reception', 'lab', 'chamber']):
+        return HttpResponseForbidden("Access Denied.")
+
+    queue = Visit.objects.filter(status=VisitStatus.PENDING_REPORTING).order_by('created_at')
+
+    stats = {
+        'pending': queue.count(),
+        'finalized_today': Visit.objects.filter(
+            updated_at__date=timezone.localdate(),
+            status__in=[VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED]
+        ).count()
+    }
+
+    context = {
+        'queue': queue,
+        'stats': stats,
+        **get_user_context(request)
+    }
+    return render(request, 'reporting/dashboard.html', context)
+
+
+@login_required
+def reporting_detail(request, visit_id):
+    if not in_group(request.user, ['reception', 'lab', 'chamber']):
+        return HttpResponseForbidden("Access Denied.")
+
+    visit = get_object_or_404(Visit, id=visit_id)
+    if visit.status != VisitStatus.PENDING_REPORTING:
+        messages.warning(request, f"Visit {visit.visit_id} is not in Pending Reporting status.")
+        return redirect('reporting_dashboard')
+
+    # Approved test orders sorted by display_order, created_at
+    test_orders = visit.test_orders.filter(
+        status=TestOrderStatus.REPORT_READY
+    ).select_related('test').order_by('display_order', 'created_at')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'save_order':
+            submitted_order_ids = request.POST.getlist('order_ids')
+            for index, order_id in enumerate(submitted_order_ids):
+                TestOrder.objects.filter(id=order_id, visit=visit).update(display_order=index)
+            messages.success(request, "Test order layout saved successfully.")
+            return redirect('reporting_detail', visit_id=visit.id)
+
+        elif action == 'finalize':
+            submitted_order_ids = request.POST.getlist('order_ids')
+            if submitted_order_ids:
+                for index, order_id in enumerate(submitted_order_ids):
+                    TestOrder.objects.filter(id=order_id, visit=visit).update(display_order=index)
+
+            try:
+                finalize_visit_report(visit, request.user)
+                messages.success(request, f"Report for visit {visit.visit_id} finalized and SMS sent.")
+                return redirect('reporting_dashboard')
+            except TransitionError as e:
+                messages.error(request, f"Failed to finalize report: {e}")
+                return redirect('reporting_detail', visit_id=visit.id)
+
+    context = {
+        'visit': visit,
+        'test_orders': test_orders,
+        **get_user_context(request)
+    }
+    return render(request, 'reporting/detail.html', context)
+
+
+# ── Test Order Cancellation ────────────────────────────────────────
+
+@login_required
+def cancel_test_order(request):
+    """Cancel a TestOrder. Requires doctor role and password re-verification."""
+    if request.method != 'POST':
+        return HttpResponseForbidden("Method not allowed.")
+
+    if not in_group(request.user, ['chamber']):
+        return HttpResponseForbidden("Access Denied: Only doctors can cancel test orders.")
+
+    order_id = request.POST.get('order_id')
+    password = request.POST.get('password', '')
+    reason = request.POST.get('reason', '').strip()
+
+    order = get_object_or_404(TestOrder, id=order_id)
+    visit = order.visit
+
+    # Validate reason is provided
+    if not reason:
+        messages.error(request, "A cancellation reason is required.")
+        return redirect('visit_detail', visit_id=visit.id)
+
+    # Authenticate doctor with their own password
+    auth_user = authenticate(username=request.user.username, password=password)
+    if auth_user is None or auth_user.pk != request.user.pk:
+        messages.error(request, "Incorrect password. Cancellation denied.")
+        return redirect('visit_detail', visit_id=visit.id)
+
+    # Validate the test order is in a cancellable state
+    non_cancellable = (TestOrderStatus.REPORT_READY, TestOrderStatus.CANCELLED)
+    if order.status in non_cancellable:
+        messages.error(request, f"Cannot cancel a test order with status '{order.get_status_display()}'.")
+        return redirect('visit_detail', visit_id=visit.id)
+
+    # Perform the cancellation
+    old_status = order.get_status_display()
+    try:
+        transition_test_order_status(
+            order, TestOrderStatus.CANCELLED, request.user,
+            f"Cancelled by doctor. Previous status: {old_status}. Reason: {reason}"
+        )
+        messages.success(request, f"Test '{order.test.name}' has been cancelled.")
+    except TransitionError as e:
+        messages.error(request, f"Failed to cancel test order: {e}")
+
+    return redirect('visit_detail', visit_id=visit.id)

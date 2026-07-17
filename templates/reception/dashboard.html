@@ -55,7 +55,7 @@
                     <th>Age/Gender</th>
                     <th>Phone</th>
                     <th>Referred By</th>
-                    <th>Status</th>
+
                     <th>Registered At</th>
                     <th>Action</th>
                 </tr>
@@ -68,9 +68,7 @@
                     <td>{{ visit.age }} / {{ visit.get_gender_display }}</td>
                     <td>{{ visit.phone }}</td>
                     <td>{{ visit.referred_by|default:"—" }}</td>
-                    <td>
-                        <span class="badge badge-{{ visit.status }}">{{ visit.get_status_display }}</span>
-                    </td>
+
                     <td>{{ visit.created_at|date:"d M, H:i" }}</td>
                     <td class="no-print">
                         <div class="btn-group">
@@ -81,7 +79,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" class="table-empty">
+                    <td colspan="7" class="table-empty">
                         No visits recorded yet. Get started by registering a patient!
                     </td>
                 </tr>
