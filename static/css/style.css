@@ -1175,3 +1175,167 @@ textarea.form-control {
     from { opacity: 0; transform: translateY(-20px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ── Search Bar ──────────────────────────────────────────────────── */
+.search-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.search-bar-main {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.search-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 240px;
+}
+
+.search-input-wrap .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.search-input-wrap .search-input {
+    padding-left: 36px;
+}
+
+.search-dates {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.search-date-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 150px;
+}
+
+.search-date-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.search-bar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* ── Pagination ──────────────────────────────────────────────────── */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.pagination-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--primary-700);
+    background: var(--white);
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.pagination-btn:hover {
+    background: var(--primary-50);
+    border-color: var(--primary-300);
+    text-decoration: none;
+    color: var(--primary-900);
+}
+
+.pagination-btn.disabled {
+    color: var(--gray-400);
+    background: var(--gray-50);
+    border-color: var(--gray-200);
+    cursor: default;
+    pointer-events: none;
+}
+
+.pagination-pages {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0 8px;
+}
+
+.pagination-page {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-700);
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.pagination-page:hover {
+    background: var(--primary-50);
+    border-color: var(--primary-300);
+    color: var(--primary-700);
+    text-decoration: none;
+}
+
+.pagination-page.active {
+    background: var(--primary-700);
+    color: var(--white);
+    border-color: var(--primary-700);
+    font-weight: 600;
+}
+
+.pagination-ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+    color: var(--gray-500);
+}
+
+/* Responsive: search bar stacks on small screens */
+@media (max-width: 768px) {
+    .search-bar-main {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .search-dates {
+        flex-direction: column;
+    }
+    .search-date-field {
+        min-width: unset;
+    }
+    .pagination-pages {
+        margin: 0 4px;
+    }
+}

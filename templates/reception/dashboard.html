@@ -41,10 +41,69 @@
     </div>
 </div>
 
+<!-- Search Bar -->
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" action="{% url 'reception_dashboard' %}" class="search-bar" id="visit-search-form">
+            <div class="search-bar-main">
+                <div class="search-input-wrap">
+                    <span class="search-icon">🔍</span>
+                    <input
+                        type="text"
+                        name="q"
+                        id="search-q"
+                        class="form-control search-input"
+                        placeholder="Search by name, phone, or visit ID…"
+                        value="{{ search_query }}"
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="search-dates">
+                    <div class="search-date-field">
+                        <label for="search-date-from">From</label>
+                        <input
+                            type="date"
+                            name="date_from"
+                            id="search-date-from"
+                            class="form-control"
+                            value="{{ date_from }}"
+                            min="{{ two_years_ago_iso }}"
+                            max="{{ today_iso }}"
+                        >
+                    </div>
+                    <div class="search-date-field">
+                        <label for="search-date-to">To</label>
+                        <input
+                            type="date"
+                            name="date_to"
+                            id="search-date-to"
+                            class="form-control"
+                            value="{{ date_to }}"
+                            min="{{ two_years_ago_iso }}"
+                            max="{{ today_iso }}"
+                        >
+                    </div>
+                </div>
+            </div>
+            <div class="search-bar-actions">
+                <button type="submit" class="btn btn-primary btn-sm">🔍 Search</button>
+                {% if is_search %}
+                <a href="{% url 'reception_dashboard' %}" class="btn btn-outline btn-sm">✕ Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Visits List Queue -->
 <div class="card">
     <div class="card-header">
-        <h3>Recent Visits Queue</h3>
+        <h3>{% if is_search %}Search Results{% else %}Recent Visits Queue{% endif %}</h3>
+        {% if page_obj %}
+        <span class="text-muted text-sm">
+            Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }} visit{{ page_obj.paginator.count|pluralize }}
+        </span>
+        {% endif %}
     </div>
     <div class="table-wrap">
         <table>
@@ -80,12 +139,53 @@
                 {% empty %}
                 <tr>
                     <td colspan="7" class="table-empty">
-                        No visits recorded yet. Get started by registering a patient!
+                        {% if is_search %}
+                            No visits found matching your search. Try different keywords or adjust the date range.
+                        {% else %}
+                            No visits recorded yet. Get started by registering a patient!
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer">
+        <nav class="pagination" aria-label="Search results pages">
+            {% if page_obj.has_previous %}
+            <a href="?{% if search_query %}q={{ search_query }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.previous_page_number }}" class="pagination-btn">
+                ← Previous
+            </a>
+            {% else %}
+            <span class="pagination-btn disabled">← Previous</span>
+            {% endif %}
+
+            <div class="pagination-pages">
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                        <span class="pagination-page active">{{ num }}</span>
+                    {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                        <a href="?{% if search_query %}q={{ search_query }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ num }}" class="pagination-page">{{ num }}</a>
+                    {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                        <a href="?{% if search_query %}q={{ search_query }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ num }}" class="pagination-page">{{ num }}</a>
+                    {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
+                        <span class="pagination-ellipsis">…</span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if page_obj.has_next %}
+            <a href="?{% if search_query %}q={{ search_query }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.next_page_number }}" class="pagination-btn">
+                Next →
+            </a>
+            {% else %}
+            <span class="pagination-btn disabled">Next →</span>
+            {% endif %}
+        </nav>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

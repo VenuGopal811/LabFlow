@@ -144,6 +144,11 @@ class Visit(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Visit'
         verbose_name_plural = 'Visits'
+        indexes = [
+            models.Index(fields=['patient_name'], name='idx_visit_patient_name'),
+            models.Index(fields=['phone'], name='idx_visit_phone'),
+            models.Index(fields=['-created_at'], name='idx_visit_created_desc'),
+        ]
 
     def __str__(self):
         return f'{self.visit_id} — {self.patient_name}'

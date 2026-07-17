@@ -62,20 +62,92 @@ def reception_dashboard(request):
     if not in_group(request.user, ['reception']):
         return HttpResponseForbidden("Access Denied: You do not have permission to view Reception.")
 
-    visits = Visit.objects.all().order_by('-created_at')[:50]
-    
-    # Stats
+    from datetime import timedelta, date
+    from django.core.paginator import Paginator
+    from django.db.models import Q
+
+    # ── Hard 2-year backend constraint ────────────────────────────
     today = timezone.localdate()
+    two_years_ago = today - timedelta(days=730)
+    base_qs = Visit.objects.filter(created_at__date__gte=two_years_ago)
+
+    # ── Read GET params ───────────────────────────────────────────
+    search_query = request.GET.get('q', '').strip()
+    date_from_str = request.GET.get('date_from', '').strip()
+    date_to_str = request.GET.get('date_to', '').strip()
+
+    date_clamped = False
+    date_from = None
+    date_to = None
+
+    # Parse & clamp date_from
+    if date_from_str:
+        try:
+            date_from = date.fromisoformat(date_from_str)
+            if date_from < two_years_ago:
+                date_from = two_years_ago
+                date_clamped = True
+        except ValueError:
+            date_from = None
+
+    # Parse date_to
+    if date_to_str:
+        try:
+            date_to = date.fromisoformat(date_to_str)
+            if date_to > today:
+                date_to = today
+        except ValueError:
+            date_to = None
+
+    # ── Build filtered queryset ───────────────────────────────────
+    qs = base_qs
+    is_search = bool(search_query or date_from or date_to)
+
+    if search_query:
+        qs = qs.filter(
+            Q(patient_name__icontains=search_query)
+            | Q(phone__icontains=search_query)
+            | Q(visit_id__icontains=search_query)
+        )
+
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    qs = qs.order_by('-created_at')
+
+    # ── Pagination (25 per page) ──────────────────────────────────
+    paginator = Paginator(qs, 25)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    # ── Clamp message ─────────────────────────────────────────────
+    if date_clamped:
+        messages.info(
+            request,
+            f"The 'from' date has been adjusted to {two_years_ago.strftime('%d %b %Y')}"
+            " — search is limited to the last 2 years."
+        )
+
+    # ── Stats (always based on today, unchanged) ──────────────────
     stats = {
         'total_today': Visit.objects.filter(created_at__date=today).count(),
         'registered_today': Visit.objects.filter(created_at__date=today, status=VisitStatus.REGISTERED).count(),
         'payment_pending_today': Visit.objects.filter(created_at__date=today, status=VisitStatus.PAYMENT_PENDING).count(),
         'completed_today': Visit.objects.filter(created_at__date=today, status__in=[VisitStatus.REPORT_READY, VisitStatus.REPORT_DELIVERED]).count(),
     }
-    
+
     context = {
-        'visits': visits,
+        'visits': page_obj,
+        'page_obj': page_obj,
         'stats': stats,
+        'search_query': search_query,
+        'date_from': date_from.isoformat() if date_from else '',
+        'date_to': date_to.isoformat() if date_to else '',
+        'is_search': is_search,
+        'two_years_ago_iso': two_years_ago.isoformat(),
+        'today_iso': today.isoformat(),
         **get_user_context(request)
     }
     return render(request, 'reception/dashboard.html', context)
