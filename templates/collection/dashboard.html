@@ -47,12 +47,12 @@
                     <td>{{ visit.patient_name }}</td>
                     <td>{{ visit.age }} / {{ visit.get_gender_display }}</td>
                     <td>
-                        {% for type in visit.test_orders.all %}
-                            <span class="badge badge-sent_to_collection" style="text-transform: capitalize;">{{ type.test.sample_type }}</span>
+                        {% for order in visit.active_test_orders.all %}
+                            <span class="badge badge-sent_to_collection" style="text-transform: capitalize;">{{ order.test.sample_type }}</span>
                         {% endfor %}
                     </td>
                     <td>
-                        {% for order in visit.test_orders.all %}
+                        {% for order in visit.active_test_orders.all %}
                             {{ order.test.short_code|default:order.test.name }}{% if not forloop.last %}, {% endif %}
                         {% endfor %}
                     </td>

@@ -93,7 +93,7 @@
                         <td><strong>{{ visit.visit_id }}</strong></td>
                         <td>{{ visit.patient_name }}</td>
                         <td>
-                            {% for order in visit.test_orders.all %}
+                            {% for order in visit.active_test_orders.all %}
                                 <span class="badge badge-registered">{{ order.test.short_code|default:order.test.name }}</span>
                             {% endfor %}
                         </td>

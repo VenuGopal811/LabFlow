@@ -47,7 +47,7 @@
                     <td>{{ visit.patient_name }}</td>
                     <td>{{ visit.age }} / {{ visit.get_gender_display }}</td>
                     <td>
-                        {% for order in visit.test_orders.all %}
+                        {% for order in visit.active_test_orders.all %}
                             <span class="badge badge-report_ready">{{ order.test.short_code|default:order.test.name }}</span>{% if not forloop.last %} {% endif %}
                         {% endfor %}
                     </td>

@@ -196,14 +196,19 @@ class Visit(models.Model):
     def total_amount(self):
         """Sum of all test order prices."""
         return sum(
-            to.test.price for to in self.test_orders.select_related('test').all()
+            to.test.price for to in self.test_orders.exclude(status=TestOrderStatus.CANCELLED).select_related('test').all()
             if to.test
         )
 
     @property
+    def active_test_orders(self):
+        """Return all test orders that are not cancelled."""
+        return self.test_orders.exclude(status=TestOrderStatus.CANCELLED)
+
+    @property
     def all_tests_ready(self):
         """True if every active (non-cancelled) test order on this visit has status report_ready."""
-        active_orders = self.test_orders.exclude(status=TestOrderStatus.CANCELLED)
+        active_orders = self.active_test_orders
         if not active_orders.exists():
             return False
         return all(o.status == TestOrderStatus.REPORT_READY for o in active_orders)

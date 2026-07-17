@@ -141,7 +141,7 @@ def visit_detail(request, visit_id):
 @login_required
 def print_bill(request, visit_id):
     visit = get_object_or_404(Visit, id=visit_id)
-    test_orders = visit.test_orders.all()
+    test_orders = visit.test_orders.exclude(status=TestOrderStatus.CANCELLED)
     total = sum(order.test.price for order in test_orders)
     
     context = {
@@ -287,7 +287,7 @@ def collection_collect(request, visit_id):
     visit = get_object_or_404(Visit, id=visit_id)
     
     # We need to collect samples matching the sample types needed by the test orders that need collection
-    test_orders = visit.test_orders.all()
+    test_orders = visit.test_orders.exclude(status=TestOrderStatus.CANCELLED)
     pending_orders = visit.test_orders.filter(status__in=[TestOrderStatus.PENDING, TestOrderStatus.RECOLLECTION_REQUIRED])
     # Group required sample types
     required_samples = list(set(order.test.sample_type for order in pending_orders))
