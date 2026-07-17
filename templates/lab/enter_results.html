@@ -89,4 +89,112 @@
         </div>
     </div>
 </form>
+
+{{ calc_config_json|json_script:"calc-config" }}
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const configRaw = document.getElementById('calc-config').textContent;
+    let config = {};
+    try {
+        config = JSON.parse(configRaw);
+    } catch (e) {
+        console.error("Failed to parse calc-config", e);
+    }
+
+    if (Object.keys(config).length === 0) return;
+
+    const getInput = (orderId, paramName) => document.getElementById(`order_${orderId}_param_${paramName}`);
+
+    const getWarningContainer = (orderId) => {
+        let container = document.getElementById(`warning_${orderId}`);
+        if (!container) {
+            const orderInput = document.querySelector(`input[name="order_ids"][value="${orderId}"]`);
+            if (orderInput) {
+                const table = orderInput.nextElementSibling;
+                container = document.createElement('div');
+                container.id = `warning_${orderId}`;
+                container.style.marginTop = '12px';
+                table.parentNode.insertBefore(container, table.nextSibling);
+            }
+        }
+        return container;
+    };
+
+    const evaluateGroups = (orderId) => {
+        const groups = config[orderId];
+        if (!groups) return;
+
+        let warnings = [];
+
+        groups.forEach(group => {
+            let totalVal = NaN;
+            let totalInput = null;
+
+            if (typeof group.total === 'number') {
+                totalVal = group.total;
+            } else if (typeof group.total === 'string') {
+                totalInput = getInput(orderId, group.total);
+                if (totalInput && totalInput.value.trim() !== '') {
+                    totalVal = parseFloat(totalInput.value);
+                }
+            }
+
+            let blankMembers = [];
+            let sumFilled = 0;
+
+            group.members.forEach(member => {
+                const input = getInput(orderId, member);
+                if (input) {
+                    if (input.value.trim() === '') {
+                        blankMembers.push(input);
+                    } else {
+                        const val = parseFloat(input.value);
+                        if (!isNaN(val)) sumFilled += val;
+                    }
+                }
+            });
+
+            if (!isNaN(totalVal)) {
+                if (blankMembers.length === 1) {
+                    const calcVal = totalVal - sumFilled;
+                    blankMembers[0].value = parseFloat(calcVal.toFixed(4));
+                } else if (blankMembers.length === 0) {
+                    if (Math.abs(sumFilled - totalVal) > 0.0001) {
+                        const totalName = typeof group.total === 'string' ? group.total : 'Total';
+                        const msg = `⚠️ <strong>Warning:</strong> Sum of [${group.members.join(', ')}] (${parseFloat(sumFilled.toFixed(4))}) does not match ${totalName} (${totalVal}).`;
+                        warnings.push(msg);
+                    }
+                }
+            } else if (totalInput && totalInput.value.trim() === '' && blankMembers.length === 0) {
+                totalInput.value = parseFloat(sumFilled.toFixed(4));
+            }
+        });
+
+        const warningContainer = getWarningContainer(orderId);
+        if (warningContainer) {
+            if (warnings.length > 0) {
+                warningContainer.innerHTML = warnings.map(w => `<div style="color: #856404; background-color: #fff3cd; border-color: #ffeeba; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px;">${w}</div>`).join('');
+            } else {
+                warningContainer.innerHTML = '';
+            }
+        }
+    };
+
+    Object.keys(config).forEach(orderId => {
+        const groups = config[orderId];
+        groups.forEach(group => {
+            if (typeof group.total === 'string') {
+                const totalInput = getInput(orderId, group.total);
+                if (totalInput) totalInput.addEventListener('input', () => evaluateGroups(orderId));
+            }
+            group.members.forEach(member => {
+                const input = getInput(orderId, member);
+                if (input) input.addEventListener('input', () => evaluateGroups(orderId));
+            });
+        });
+        evaluateGroups(orderId);
+    });
+});
+</script>
 {% endblock %}

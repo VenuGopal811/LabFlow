@@ -535,9 +535,17 @@ def lab_enter_results_visit(request, visit_id):
             'param_fields': param_fields,
         })
 
+    import json
+    calc_config = {}
+    
+    for order in orders:
+        if order.test.parameter_groups:
+            calc_config[order.id] = order.test.parameter_groups
+
     context = {
         'visit': visit,
         'orders_with_fields': orders_with_fields,
+        'calc_config_json': json.dumps(calc_config),
         **get_user_context(request)
     }
     return render(request, 'lab/enter_results.html', context)

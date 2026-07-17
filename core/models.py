@@ -80,6 +80,10 @@ class TestCatalog(models.Model):
         default=list, blank=True,
         help_text='List of parameter dicts: [{"name": "Hemoglobin", "unit": "g/dL", "ref_min": 12.0, "ref_max": 16.0}, ...]'
     )
+    parameter_groups = models.JSONField(
+        default=list, blank=True,
+        help_text='List of auto-calculation groups: [{"total": 4, "members": ["Albumin", "Globulin"]}, {"total": "Total Protein", "members": ["Albumin", "Globulin"]}]'
+    )
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
 
