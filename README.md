@@ -8,14 +8,18 @@ A role-based, multi-station lab workflow engine built with **Django 5.x**. LabFl
 
 | Feature | Description |
 |---|---|
-| **Multi-Station Workflow** | Dedicated dashboards for Reception, Chamber (Billing/Approvals), Sample Collection, Lab Technicians, and Doctor Review |
-| **Dual State Machines** | Independent FSMs for Visit status (9 states) and Test Order status (8 states) with strictly validated transitions |
-| **Role-Based Access Control** | Four user groups (`reception`, `chamber`, `collection`, `lab`) with per-view permission checks |
-| **Test Catalog** | Configurable master list of tests with multi-parameter definitions, reference ranges, units, pricing, and sample types |
-| **PDF Report Generation** | Professional lab reports generated with ReportLab (A4, branded header, patient info, results table with reference ranges) |
+| **Multi-Station Workflow** | Dedicated dashboards for Reception, Chamber (Billing/Approvals), Sample Collection, Lab Technicians, Doctor Review, and **Reporting** (custom layout sorting and finalization) |
+| **Dual State Machines** | Independent FSMs for Visit status (11 states, including Pending Reporting and Cancelled) and Test Order status (9 states, including Cancelled) with strictly validated transitions |
+| **Role-Based Access Control** | Four user groups (`reception`, `chamber`, `collection`, `lab`) with per-view permission checks and cross-role Reporting access |
+| **Search & Filters** | Reception Dashboard supports patient lookup by name, phone, or visit ID, with date-range filters clamped to a **hard 2-year limit** (backed by database indexes) |
+| **Pagination** | Efficiently paginates the Reception Dashboard (25 visits per page) |
+| **Test Order Cancellation** | Doctors (`chamber` role) can cancel individual test orders with password re-verification and a logged reason; auto-cancels visit if all tests are cancelled |
+| **Test Catalog** | Configurable master list of tests with parameter groups, reference ranges, units, pricing, and sample types |
+| **Auto-Calculation & Validation** | Dynamic client-side calculations (using `parameter_groups`) to auto-fill totals or missing members, and display sum warnings during lab result entry |
+| **PDF Report Generation** | Professional lab reports generated with ReportLab, respecting customized test order layouts and excluding cancelled tests |
 | **Token-Gated Report Download** | Patients receive a time-limited (configurable, default 72h) secure URL to download their report — no login needed |
-| **SMS Notifications** | Pluggable SMS backend with console (dev) and MSG91 (production) support; auto-sends report links on completion |
-| **Immutable Audit Log** | Every status change, result entry, result edit, payment confirmation, and SMS dispatch is logged with actor and timestamp |
+| **SMS Notifications** | Pluggable SMS backend with console (dev) and MSG91 (production) support; auto-sends report links on finalization |
+| **Immutable Audit Log** | Every status change, cancellation, result entry/edit, payment confirmation, and SMS dispatch is logged with actor and timestamp |
 | **Result Integrity** | Original lab results are preserved when a doctor makes corrections; edits are logged with reason |
 | **Retest & Recollection** | Doctor can flag individual tests for retest or recollection, which automatically reverts the visit to the appropriate station |
 | **Django Admin Integration** | Full admin site with colored status badges, bulk actions, inline editing, and station-aware views |
@@ -43,15 +47,16 @@ LabFlow/
 │   ├── admin.py           # Customized admin with status badges & bulk actions
 │   ├── urls.py            # All front-end URL routes
 │   ├── context_processors.py  # Template group context
-│   ├── tests.py           # Comprehensive test suite (11 test classes)
+│   ├── tests.py           # Comprehensive test suite (covers transitions, cancellation, auto-calculation, layout ordering)
 │   ├── management/
 │   │   └── commands/
 │   │       └── seed_data.py   # Seed test catalog & demo users
 │   └── migrations/
 │       ├── 0001_initial.py
-│       └── 0002_create_groups.py  # Creates RBAC groups via data migration
+│       ├── 0002_create_groups.py  # Creates RBAC groups via data migration
+│       └── ...                    # Subsequent migrations (display order, cancellation, search indexes, parameter groups)
 ├── reports/               # PDF report generation & token-gated download
-│   ├── pdf_generator.py   # ReportLab-based PDF builder
+│   ├── pdf_generator.py   # ReportLab-based PDF builder (respects display order, filters out cancelled tests)
 │   ├── views.py           # Public download endpoint (no auth)
 │   └── urls.py
 ├── notifications/         # Pluggable SMS backend
@@ -63,7 +68,8 @@ LabFlow/
 │   ├── chamber/           # Payment confirmation & visit approval
 │   ├── collection/        # Sample collection forms
 │   ├── lab/               # Result entry (per-visit, multi-test)
-│   └── doctor/            # Review, approve/edit/retest/recollect
+│   ├── doctor/            # Review, approve/edit/retest/recollect
+│   └── reporting/         # Reporting dashboard, report layout & finalization
 ├── static/                # CSS and admin static files
 ├── requirements.txt
 ├── manage.py
@@ -110,19 +116,24 @@ LabFlow/
  Approved by Chamber
      │
      ▼
- Sent to Collection ◄──────────── Recollection Required
+ Sent to Collection ◄───────────────── Recollection Required
      │                                    ▲
      ▼                                    │
- Sample Collected                         │
-     │                                    │
-     ▼                                    │
- [Lab enters results per test]            │
-     │                                    │
-     ▼                                    │
- Doctor Reviewed ──── Retest? ──▶ Retest Required
-     │                                (back to lab)
+ Sample Collected ◄─── Retest                │
+     │              Required              │
+     ▼                 ▲                  │
+ [Lab enters results]       │                  │
+     │                 │                  │
+     ▼                 │                  │
+ Doctor Reviewed ─────────┴──────────────────┘
+     │
+     ▼
+ Pending Reporting
+     │
      ▼
  Report Ready  ──▶  SMS sent  ──▶  Report Delivered
+
+  * Note: Any active visit state can transition to CANCELLED.
 ```
 
 ### Test Order Lifecycle (Independent per test)
@@ -134,11 +145,9 @@ LabFlow/
      │                            ▼          ▼          ▼
      │                     Doctor Reviewed  Retest    Recollect
      │                            │       Required   Required
- Recollection                     ▼          │          │
+     │                            ▼          │          │
+ Recollection                Report Ready    │          │
  Required ◄───────────────────────┘          │          │
-                              Report Ready   │          │
-                                  ▲          │          │
-                                  │  (back   │  (back   │
                                   │  to      │  to      │
                                   │  Testing)│  Pending)│
                                   └──────────┘──────────┘
@@ -279,20 +288,23 @@ Each test includes full parameter definitions with units and reference ranges. A
 ## 🧑‍💻 Running Tests
 
 ```bash
-python manage.py test core
+# Remember to run it within the virtual environment
+venv\Scripts\python manage.py test core
 ```
 
 The test suite covers:
 - Visit ID auto-generation (format `LF-YYYYMMDD-NNNN`, sequential ordering)
 - Visit status state machine (valid/invalid transitions, audit logging)
 - Payment confirmation flow
-- Test order state machine (full happy path, retest cycle)
+- Test order state machine (full happy path, retest/recollection cycles)
 - Result editing with original value preservation
 - Result validation (numeric type checking against reference ranges)
-- Visit auto-completion when all tests are ready
+- Visit status transitions to `Pending Reporting` when all tests are ready
+- Reporting dashboard access, report layout reordering (`display_order` tracking), and finalization (generates token, sends SMS, moves to `Report Delivered`)
+- Test order cancellation by doctor (requires password re-verification, checks reason, auto-cancels visit if all tests are cancelled)
 - Report token generation, uniqueness, and expiry validation
 - Sample collection triggering visit status transitions
-- Recollection reverting visit status (from multiple states)
+- Recollection and retest reverting visit status to correct stations (e.g. from reporting down to collection or sample collected)
 - Phone number validation (10-digit, country code stripping)
 - SMS send action (via view endpoint)
 
@@ -312,10 +324,10 @@ The test suite covers:
 
 | URL | Method | Description |
 |---|---|---|
-| `/reception/` | GET | Reception dashboard (recent visits, daily stats) |
+| `/reception/` | GET | Reception dashboard (includes search by name/phone/ID and date filtering, paginated 25 per page) |
 | `/reception/register/` | GET/POST | Register a new patient visit |
 | `/visit/<id>/` | GET | Visit detail with tests, samples, payment, audit log |
-| `/visit/<id>/bill/` | GET | Printable bill view |
+| `/visit/<id>/bill/` | GET | Printable bill view (excludes cancelled test orders) |
 | `/visit/<id>/pay-pending/` | POST | Mark visit as payment pending |
 | `/visit/<id>/send-sms/` | POST | Manually trigger report SMS |
 
@@ -339,7 +351,7 @@ The test suite covers:
 | URL | Method | Description |
 |---|---|---|
 | `/lab/` | GET | Lab queue (grouped by visit) |
-| `/lab/visit/<id>/results/` | GET/POST | Enter results for all tests in a visit |
+| `/lab/visit/<id>/results/` | GET/POST | Enter results for all tests in a visit (supports auto-calculation and sum warnings via parameter groups) |
 
 ### Doctor Review
 
@@ -347,6 +359,14 @@ The test suite covers:
 |---|---|---|
 | `/doctor/` | GET | Review queue (grouped by visit) |
 | `/doctor/visit/<id>/review/` | GET/POST | Review all tests: approve, edit, retest, or recollect |
+| `/test-order/cancel/` | POST | Cancel a test order (requires doctor role, password verification, and logs a cancellation reason) |
+
+### Reporting Station
+
+| URL | Method | Description |
+|---|---|---|
+| `/reporting/` | GET | Reporting queue (visits in `Pending Reporting` status) |
+| `/reporting/detail/<id>/` | GET/POST | View/reorder test layouts (using custom `display_order`) and finalize reports |
 
 ### Report Download (Public)
 
